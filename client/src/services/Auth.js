@@ -4,8 +4,8 @@ class AuthService {
   async login(username, password) {
     try {
       const res = await API.post("/users/login", { username, password });
-      const accessToken = res.data.statusCode.accessToken;
-      const user = res.data.statusCode.user;
+      const accessToken = res.data.data.accessToken;
+      const user = res.data.data.user;
 
       this.setAccessToken(accessToken);
       this.setRole(user.role);
@@ -30,7 +30,7 @@ class AuthService {
   async getCurrentUser() {
     try {
       const res = await API.get("/users/me");
-      return res.data.statusCode.user;
+      return res.data.data.user;
     } catch (error) {
       throw new Error(error?.response?.data?.message || "Failed to fetch user");
     }

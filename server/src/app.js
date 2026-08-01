@@ -5,6 +5,7 @@ const app = express();
 
 
 const allowedOrigins = [
+  process.env.CORS_ORIGIN || "http://localhost:5173"
 ];
 
 app.use(
@@ -34,10 +35,12 @@ app.get("/api/ping", (req, res) => {
 
 //routes import
 import userRouter from "./routes/user.routes.js"
+import mcqRouter from "./routes/mcq.routes.js"
 
 
 //routes decalaration
 app.use("/api/users", userRouter)
+app.use("/api/mcq", mcqRouter)
 
 
 export { app }

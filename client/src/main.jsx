@@ -1,17 +1,18 @@
 import './index.css'
-import React, { Suspense, lazy } from "react";
+import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { store } from "./app/store";
 import { Provider } from "react-redux";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import {Protected,Secured} from './components/AuthLayout';
+import { Protected } from './components/AuthLayout';
 
-
-
-const Home = React.lazy(() => import('./pages/Home'));
-
-
+import Home from './pages/Home';
+import BulkUpload from './pages/BulkUpload';
+import TestConfig from './pages/TestConfig';
+import AttemptScreen from './pages/AttemptScreen';
+import ReviewScreen from './pages/ReviewScreen';
+import EditSet from './pages/EditSet';
 
 const router = createBrowserRouter([
   {
@@ -23,12 +24,24 @@ const router = createBrowserRouter([
         element: <Home />,
       },
       {
-        path: "/home",
-        element: (
-          <Protected authentication>
-            <Home />
-          </Protected>
-        ),
+        path: "/upload",
+        element: <Protected authentication><BulkUpload /></Protected>,
+      },
+      {
+        path: "/test-config/:id",
+        element: <Protected authentication><TestConfig /></Protected>,
+      },
+      {
+        path: "/attempt/:id",
+        element: <Protected authentication><AttemptScreen /></Protected>,
+      },
+      {
+        path: "/review/:id",
+        element: <Protected authentication><ReviewScreen /></Protected>,
+      },
+      {
+        path: "/edit-set/:id",
+        element: <Protected authentication><EditSet /></Protected>,
       }
     ],
   },
