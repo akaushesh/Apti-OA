@@ -22,8 +22,9 @@ function App() {
       authService
         .getCurrentUser()
         .then((userData) => {
-          if (userData) dispatch(login(userData));
-          else {
+          if (userData) {
+            dispatch(login(userData));
+          } else {
             dispatch(logout());
             localStorage.removeItem("accessToken");
           }
@@ -40,13 +41,40 @@ function App() {
   }, [dispatch]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <Toaster position="top-center" />
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-blue-500 selection:text-white">
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          duration: 3500,
+          style: {
+            background: '#0f172a',
+            color: '#fff',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+          },
+          success: {
+            iconTheme: {
+              primary: '#10b981',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
       {!hideHeader && <Header />}
-      <main className="flex-1">
-        {loading ? <Loader /> : <Outlet />}
+      <main className="flex-1 flex flex-col">
+        {loading ? <Loader text="Loading Apti-OA..." /> : <Outlet />}
       </main>
     </div>
   );
 }
+
 export default App;

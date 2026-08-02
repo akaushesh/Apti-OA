@@ -8,32 +8,51 @@ export default function ReviewScreen() {
   const [attempt, setAttempt] = useState(null);
   const [filter, setFilter] = useState("all");
   const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    API.get(`/mcq/attempts/${id}`).then(res => {
-      setAttempt(res.data.data);
-    }).catch(console.error);
-  }, [id]);
+    setLoading(true);
+    API.get(`/mcq/attempts/${id}`)
+      .then(res => {
+        setAttempt(res.data.data);
+      })
+      .catch(err => {
+        console.error(err);
+        toast.error("Failed to load attempt review");
+        navigate("/");
+      })
+      .finally(() => setLoading(false));
+  }, [id, navigate]);
 
   const handleDelete = async () => {
     try {
       await API.delete(`/mcq/attempts/${id}`);
-      toast.success("Attempt deleted");
+      toast.success("Attempt history deleted");
       navigate("/");
     } catch(e) {
-      toast.error("Failed to delete attempt");
+      toast.error("Failed to delete attempt history");
     }
   };
 
-  if (!attempt) return <div className="p-8 text-center">Loading...</div>;
+  if (loading || !attempt) {
+    return (
+      <div className="min-h-[70vh] flex flex-col justify-center items-center p-6 text-slate-500">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4" />
+        <p className="font-semibold text-sm">Loading test performance review...</p>
+      </div>
+    );
+  }
 
-  const qs = attempt.questionSetId;
-  
+  const qs = attempt.questionSetId || {};
+  const totalQuestions = attempt.totalQuestions || qs.questions?.length || 0;
+
   const ansMap = {};
-  attempt.answers.forEach(a => {
-    ansMap[a.questionId] = { option: a.selectedOption, isUntimed: a.isUntimed };
-  });
+  if (attempt.answers) {
+    attempt.answers.forEach(a => {
+      ansMap[a.questionId] = { option: a.selectedOption, isUntimed: a.isUntimed };
+    });
+  }
 
   let countCorrect = 0;
   let countIncorrect = 0;
@@ -65,124 +84,225 @@ export default function ReviewScreen() {
     return true;
   });
 
+  const accuracyPercent = totalQuestions > 0 ? Math.round((countCorrect / totalQuestions) * 100) : 0;
+
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      
+      {/* Delete Confirmation Modal */}
       {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Attempt History?</h3>
-            <p className="text-gray-600 mb-6">Are you sure you want to permanently delete this attempt history?</p>
-            <div className="flex justify-end gap-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full border border-slate-100 animate-in zoom-in-95 duration-150">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Delete Attempt Record?</h3>
+            <p className="text-slate-500 text-sm mb-6 leading-relaxed">
+              Are you sure you want to permanently delete this attempt history record?
+            </p>
+            <div className="flex items-center justify-end gap-3">
               <button 
                 onClick={() => setShowConfirm(false)}
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded font-medium transition-colors"
+                className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleDelete}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium transition-colors shadow-sm"
+                className="px-5 py-2.5 text-sm font-bold bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl shadow-md shadow-rose-600/20 transition-all"
               >
-                Delete
+                Delete Record
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Review Attempt</h1>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setShowConfirm(true)} className="text-red-500 hover:text-red-700 text-sm font-medium">Delete Attempt</button>
-          <Link to="/" className="text-blue-600 hover:underline">Back to Dashboard</Link>
+      {/* Top Title & Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Performance Assessment</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Review Practice Results
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowConfirm(true)} 
+            className="px-3.5 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors"
+          >
+            Delete Record
+          </button>
+          <Link 
+            to="/" 
+            className="px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl shadow-sm transition-all"
+          >
+            Back to Dashboard
+          </Link>
         </div>
       </div>
       
-      <div className="bg-white p-6 rounded shadow-sm border mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="font-semibold text-xl text-gray-800">{qs.name}</h2>
-          <p className="text-gray-500 text-sm mb-3">Attempted: {new Date(attempt.createdAt).toLocaleString()}</p>
-          <div className="flex gap-4 text-sm font-medium">
-            <span className="text-green-600">Correct: {countCorrect}</span>
-            <span className="text-red-600">Incorrect: {countIncorrect}</span>
-            <span className="text-gray-500">Skipped: {countSkipped}</span>
-            {countUntimed > 0 && <span className="text-orange-500">Untimed: {countUntimed}</span>}
+      {/* Top Performance Analytics Banner */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200/80 mb-8 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-6">
+        <div className="flex-1">
+          <span className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 rounded-md">
+            Question Bank
+          </span>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 mt-2">{qs.name || "Question Set"}</h2>
+          <p className="text-slate-400 text-xs font-semibold mt-1">
+            Attempted on {new Date(attempt.createdAt).toLocaleString()}
+          </p>
+
+          <div className="flex flex-wrap items-center gap-4 mt-6 text-xs font-bold">
+            <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200/50">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Correct: {countCorrect}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-rose-50 text-rose-700 px-3 py-1.5 rounded-xl border border-rose-200/50">
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              <span>Incorrect: {countIncorrect}</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl border border-slate-200">
+              <span className="w-2 h-2 rounded-full bg-slate-400" />
+              <span>Skipped: {countSkipped}</span>
+            </div>
+            {countUntimed > 0 && (
+              <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 px-3 py-1.5 rounded-xl border border-amber-200/50">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span>Untimed: {countUntimed}</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-bold text-blue-600">{attempt.scoreAtTimeUp} <span className="text-xl text-gray-400">/ {attempt.totalQuestions}</span></p>
-          <p className="text-sm text-gray-500 font-medium">Timed Score</p>
+
+        {/* Big Score Card */}
+        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200/80 text-center min-w-[200px] flex flex-col items-center justify-center">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">Overall Accuracy</span>
+          <div className="text-3xl sm:text-4xl font-black text-blue-600">
+            {attempt.scoreAtTimeUp} <span className="text-xl text-slate-400 font-bold">/ {totalQuestions}</span>
+          </div>
+          <span className="text-xs font-bold text-emerald-600 mt-1">
+            {accuracyPercent}% Accuracy Rate
+          </span>
           {attempt.finalScoreIfUntimed > attempt.scoreAtTimeUp && (
-            <p className="text-sm text-orange-500 mt-1 font-medium">Untimed Score: {attempt.finalScoreIfUntimed}</p>
+            <p className="text-xs text-amber-600 mt-2 font-bold bg-amber-100/60 px-2 py-0.5 rounded-md">
+              Untimed Score: {attempt.finalScoreIfUntimed}
+            </p>
           )}
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {['all', 'correct', 'incorrect', 'skipped', 'untimed'].map(f => (
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar-hide">
+        {[
+          { key: 'all', label: `All (${processedQuestions.length})` },
+          { key: 'correct', label: `Correct (${countCorrect})` },
+          { key: 'incorrect', label: `Incorrect (${countIncorrect})` },
+          { key: 'skipped', label: `Skipped (${countSkipped})` },
+          { key: 'untimed', label: `Untimed (${countUntimed})` },
+        ].map(f => (
           <button 
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-full text-sm font-medium capitalize whitespace-nowrap transition-colors
-              ${filter === f ? 'bg-blue-600 text-white shadow' : 'bg-white border text-gray-600 hover:bg-gray-50'}
-            `}
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+              filter === f.key 
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
           >
-            {f}
+            {f.label}
           </button>
         ))}
       </div>
 
-      <div className="flex flex-col gap-6">
-        {filteredQuestions.map((q, idx) => {
-          // Find original index
-          const originalIdx = qs.questions.findIndex(orig => orig._id === q._id);
+      {/* Questions Breakdown List */}
+      <div className="space-y-6">
+        {filteredQuestions.map((q) => {
+          const originalIdx = qs.questions?.findIndex(orig => orig._id === q._id);
 
           return (
-            <div key={q._id} className="bg-white p-6 border rounded shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="font-medium text-lg leading-relaxed text-gray-800">
-                  <span className="text-gray-400 mr-2">{originalIdx + 1}.</span> 
+            <div key={q._id} className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs">
+              
+              {/* Question Header & Status Badge */}
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <h3 className="font-bold text-slate-900 text-base sm:text-lg leading-relaxed">
+                  <span className="text-slate-400 mr-2 font-mono">Q{originalIdx !== undefined && originalIdx >= 0 ? originalIdx + 1 : ''}.</span> 
                   {q.questionText}
                 </h3>
-                <div className="ml-4 shrink-0 flex gap-2">
+                <div className="shrink-0 flex items-center gap-2">
                   {!q.isSkipped && q.isUntimed && (
-                    <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-orange-100 text-orange-700 rounded-full">Untimed</span>
+                    <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-amber-50 text-amber-700 rounded-full border border-amber-200">
+                      Untimed
+                    </span>
                   )}
                   {q.isSkipped ? (
-                    <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-gray-100 text-gray-600 rounded-full">Skipped</span>
+                    <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 text-slate-600 rounded-full border border-slate-200">
+                      Skipped
+                    </span>
                   ) : q.isCorrect ? (
-                    <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-green-100 text-green-700 rounded-full">Correct</span>
+                    <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200">
+                      Correct
+                    </span>
                   ) : (
-                    <span className="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-red-100 text-red-700 rounded-full">Incorrect</span>
+                    <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-rose-50 text-rose-700 rounded-full border border-rose-200">
+                      Incorrect
+                    </span>
                   )}
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              {/* Options Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 {['A', 'B', 'C', 'D'].map(opt => {
                   const isSelectedOpt = q.selected === opt;
                   const isCorrectOpt = q.correctAnswer === opt;
                   
-                  let optStyle = "border-gray-200 text-gray-600 bg-gray-50";
-                  if (isCorrectOpt) optStyle = "bg-green-50 border-green-400 font-medium text-green-900 ring-1 ring-green-400";
-                  else if (isSelectedOpt && !isCorrectOpt) optStyle = "bg-red-50 border-red-300 font-medium text-red-900";
+                  let optStyle = "border-slate-200 bg-slate-50 text-slate-700";
+                  if (isCorrectOpt) {
+                    optStyle = "bg-emerald-50/90 border-emerald-400 text-emerald-950 font-semibold ring-1 ring-emerald-400";
+                  } else if (isSelectedOpt && !isCorrectOpt) {
+                    optStyle = "bg-rose-50/90 border-rose-400 text-rose-950 font-semibold ring-1 ring-rose-300";
+                  }
 
                   return (
-                    <div key={opt} className={`p-4 border rounded transition-colors ${optStyle}`}>
-                      <span className="font-bold mr-3 opacity-50">{opt}</span> {q[`option${opt}`]}
+                    <div key={opt} className={`p-4 rounded-2xl border text-sm flex items-center justify-between transition-all ${optStyle}`}>
+                      <div className="flex items-center gap-3">
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isCorrectOpt 
+                            ? 'bg-emerald-600 text-white' 
+                            : isSelectedOpt 
+                            ? 'bg-rose-600 text-white' 
+                            : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {opt}
+                        </span>
+                        <span>{q[`option${opt}`]}</span>
+                      </div>
+
+                      {isCorrectOpt && (
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md">
+                          Correct Answer
+                        </span>
+                      )}
+                      {isSelectedOpt && !isCorrectOpt && (
+                        <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md">
+                          Your Choice
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
+
             </div>
           );
         })}
+
         {filteredQuestions.length === 0 && (
-          <div className="text-center p-8 bg-white border rounded text-gray-500">
-            No questions match the current filter.
+          <div className="text-center p-12 bg-white rounded-3xl border border-slate-200 text-slate-500 font-semibold text-sm">
+            No questions match the selected "{filter}" filter.
           </div>
         )}
       </div>
+
     </div>
   );
 }

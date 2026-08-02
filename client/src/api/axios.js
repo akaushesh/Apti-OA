@@ -1,13 +1,11 @@
 import axios from "axios";
 
-
-
-const baseURL = `${import.meta.env.VITE_API_HOST}${import.meta.env.VITE_API_BASE_URL}`;
-
-
+const apiHost = (import.meta.env.VITE_API_HOST || "http://localhost:8000").replace(/\/$/, "");
+const apiBasePath = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+const baseURL = `${apiHost}${apiBasePath}`;
 
 const API = axios.create({
-  baseURL: baseURL,
+  baseURL,
   withCredentials: true
 });
 
@@ -23,19 +21,21 @@ API.interceptors.response.use(
   res => res,
   async (err) => {
     const originalRequest = err.config;
-    if (err.response?.status === 401 && !originalRequest._retry) {
+    if (err.response?.status === 401 && originalRequest && !originalRequest._retry && !originalRequest.url?.includes("/login") && !originalRequest.url?.includes("/refresh-token")) {
       originalRequest._retry = true;
       try {
-        const refreshResponse = await axios.post(`{BASE_URL}/refresh-token`, {}, {
+        const refreshResponse = await axios.post(`${baseURL}/users/refresh-token`, {}, {
           withCredentials: true
         });
         const newAccessToken = refreshResponse.data.data.accessToken;
         localStorage.setItem("accessToken", newAccessToken);
         API.defaults.headers.common["Authorization"] = `Bearer ${newAccessToken}`;
+        originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
         return API(originalRequest);
       } catch (refreshError) {
         localStorage.removeItem("accessToken");
-        window.location.href = "/login";
+        localStorage.removeItem("auth");
+        window.location.href = "/";
         return Promise.reject(refreshError);
       }
     }
