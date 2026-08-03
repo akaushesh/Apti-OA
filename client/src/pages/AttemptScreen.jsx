@@ -20,7 +20,6 @@ export default function AttemptScreen() {
   const [showMobileGrid, setShowMobileGrid] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Load attempt & set data
   useEffect(() => {
     setLoading(true);
     API.get(`/mcq/attempts/${id}`)
@@ -54,7 +53,6 @@ export default function AttemptScreen() {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
-  // Timer countdown hook
   useEffect(() => {
     if (timeLeft > 0 && !timeUp && !untimedMode) {
       const timer = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
@@ -115,7 +113,6 @@ export default function AttemptScreen() {
     setMarkedForReview(prev => ({ ...prev, [qId]: !prev[qId] }));
   };
 
-  // Keyboard navigation
   const handleKeyDown = useCallback((e) => {
     if (showSubmitModal || timeUp) return;
     
@@ -166,7 +163,7 @@ export default function AttemptScreen() {
   const unansweredCount = totalQuestions - answeredCount;
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden select-none">
+    <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden select-none">
       
       {/* Top Examination Header */}
       <header className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-md shrink-0 z-30">
@@ -220,17 +217,17 @@ export default function AttemptScreen() {
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">
         
-        {/* Left Sidebar Question Palette (Desktop) */}
-        <div className={`w-72 bg-white border-r border-slate-200 p-5 flex flex-col justify-between overflow-y-auto shrink-0 transition-transform ${
+        {/* Left Sidebar Question Palette */}
+        <div className={`w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 p-5 flex flex-col justify-between overflow-y-auto shrink-0 transition-transform ${
           showMobileGrid ? 'absolute inset-y-0 left-0 z-40 shadow-2xl' : 'hidden md:flex'
         }`}>
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 Question Palette
               </h2>
               {showMobileGrid && (
-                <button onClick={() => setShowMobileGrid(false)} className="text-slate-400 hover:text-slate-600">
+                <button onClick={() => setShowMobileGrid(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                   ✕
                 </button>
               )}
@@ -243,21 +240,21 @@ export default function AttemptScreen() {
                 const isAnswered = !!answers[q._id]?.option;
                 const isMarked = !!markedForReview[q._id];
 
-                let bgClass = "bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200";
-                if (isAnswered) bgClass = "bg-emerald-50 text-emerald-700 border-emerald-300 font-bold";
-                if (isMarked) bgClass = "bg-amber-100 text-amber-800 border-amber-400 font-bold";
+                let bgClass = "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 border-slate-200 dark:border-slate-600";
+                if (isAnswered) bgClass = "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 font-bold";
+                if (isMarked) bgClass = "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-700 font-bold";
 
                 return (
                   <button
                     key={q._id}
                     onClick={() => { setCurrIdx(idx); setShowMobileGrid(false); }}
                     className={`h-10 rounded-xl border text-xs font-bold flex items-center justify-center transition-all relative ${bgClass} ${
-                      isSelected ? 'ring-2 ring-blue-600 ring-offset-1 scale-105 z-10' : ''
+                      isSelected ? 'ring-2 ring-blue-600 dark:ring-blue-400 ring-offset-1 scale-105 z-10' : ''
                     }`}
                   >
                     {idx + 1}
                     {isMarked && (
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white" />
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white dark:border-slate-800" />
                     )}
                   </button>
                 );
@@ -266,27 +263,27 @@ export default function AttemptScreen() {
           </div>
 
           {/* Palette Legend & Stats */}
-          <div className="pt-4 border-t border-slate-200 space-y-2 text-xs font-semibold text-slate-600">
+          <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-400" />
+                <span className="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-950 border border-emerald-400 dark:border-emerald-700" />
                 Answered
               </span>
-              <span className="font-bold text-slate-900">{answeredCount}</span>
+              <span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-amber-100 border border-amber-400" />
+                <span className="w-3 h-3 rounded bg-amber-100 dark:bg-amber-950 border border-amber-400 dark:border-amber-700" />
                 Marked
               </span>
-              <span className="font-bold text-slate-900">{markedCount}</span>
+              <span className="font-bold text-slate-900 dark:text-white">{markedCount}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" />
+                <span className="w-3 h-3 rounded bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600" />
                 Unanswered
               </span>
-              <span className="font-bold text-slate-900">{unansweredCount}</span>
+              <span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span>
             </div>
 
             <button
@@ -299,25 +296,25 @@ export default function AttemptScreen() {
         </div>
 
         {/* Center Question Canvas */}
-        <div className="flex-1 p-4 sm:p-8 overflow-y-auto flex flex-col justify-between relative bg-slate-50">
+        <div className="flex-1 p-4 sm:p-8 overflow-y-auto flex flex-col justify-between relative bg-slate-50 dark:bg-slate-900">
           
           {/* Time Up Overlay Modal */}
           {timeUp && !untimedMode && (
             <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-              <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 animate-in zoom-in-95 duration-200">
-                <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Time Expired!</h2>
-                <p className="text-slate-500 text-sm mb-6">
-                  You answered <span className="font-bold text-slate-900">{answeredCount}</span> out of <span className="font-bold text-slate-900">{totalQuestions}</span> questions.
+                <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-1">Time Expired!</h2>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                  You answered <span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span> out of <span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span> questions.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <button 
                     onClick={() => navigate('/')} 
-                    className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-sm transition-colors"
+                    className="flex-1 py-3 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold rounded-xl text-sm transition-colors"
                   >
                     Go to Dashboard
                   </button>
@@ -333,11 +330,11 @@ export default function AttemptScreen() {
           )}
 
           {/* Question Card */}
-          <div className="max-w-3xl mx-auto w-full bg-white p-6 sm:p-10 rounded-3xl shadow-xs border border-slate-200/80 mb-6">
+          <div className="max-w-3xl mx-auto w-full bg-white dark:bg-slate-800 p-6 sm:p-10 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-700/80 mb-6">
             
             {/* Question Top Header */}
-            <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
-              <span className="text-xs font-extrabold text-blue-600 uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-lg">
+            <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100 dark:border-slate-700">
+              <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-lg">
                 Question {currIdx + 1} / {totalQuestions}
               </span>
               
@@ -346,8 +343,8 @@ export default function AttemptScreen() {
                 onClick={toggleMarkForReview}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                   markedForReview[currentQ._id]
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                    : 'text-slate-500 hover:bg-slate-100'
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
                 }`}
               >
                 <svg className="w-4 h-4" fill={markedForReview[currentQ._id] ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
@@ -358,13 +355,13 @@ export default function AttemptScreen() {
             </div>
 
             {/* Question Text */}
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-8 leading-relaxed">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">
               {currentQ.questionText}
             </h2>
 
             {/* Options Grid */}
             <div className="space-y-3">
-              {['A', 'B', 'C', 'D'].map((opt, idx) => {
+              {['A', 'B', 'C', 'D'].map((opt) => {
                 const isSelected = answers[currentQ._id]?.option === opt;
                 return (
                   <button
@@ -373,13 +370,13 @@ export default function AttemptScreen() {
                     onClick={() => handleOptionSelect(opt)}
                     className={`w-full text-left p-4 rounded-2xl border font-medium text-sm sm:text-base flex items-center justify-between transition-all group ${
                       isSelected 
-                        ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/30 text-blue-950 font-semibold' 
-                        : 'bg-white hover:bg-slate-50 border-slate-200/90 text-slate-800'
+                        ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 text-blue-950 dark:text-blue-100 font-semibold' 
+                        : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border-slate-200/90 dark:border-slate-700 text-slate-800 dark:text-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3.5 min-w-0 pr-4">
                       <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
-                        isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-slate-200'
+                        isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-600'
                       }`}>
                         {opt}
                       </span>
@@ -387,10 +384,10 @@ export default function AttemptScreen() {
                     </div>
 
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                      isSelected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300'
+                      isSelected ? 'border-blue-600 dark:border-blue-400 bg-blue-600 dark:bg-blue-400 text-white' : 'border-slate-300 dark:border-slate-600'
                     }`}>
                       {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white" />
+                        <div className="w-2 h-2 rounded-full bg-white dark:bg-slate-900" />
                       )}
                     </div>
                   </button>
@@ -399,8 +396,8 @@ export default function AttemptScreen() {
             </div>
 
             {/* Keyboard shortcut tip */}
-            <p className="text-[11px] font-semibold text-slate-400 mt-6 text-right hidden sm:block">
-              Tip: Press keys <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-600">1-4</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-600">A-D</kbd> to select option
+            <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mt-6 text-right hidden sm:block">
+              Tip: Press keys <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">1-4</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">A-D</kbd> to select option
             </p>
 
           </div>
@@ -410,7 +407,7 @@ export default function AttemptScreen() {
             <button 
               disabled={currIdx === 0} 
               onClick={() => setCurrIdx(prev => prev - 1)}
-              className="px-6 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-xl text-sm disabled:opacity-40 disabled:hover:bg-white transition-colors"
+              className="px-6 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm disabled:opacity-40 transition-colors"
             >
               ← Previous
             </button>
@@ -438,35 +435,35 @@ export default function AttemptScreen() {
       {/* Final Submission Confirmation Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full border border-slate-100 animate-in zoom-in-95 duration-150">
-            <h3 className="text-xl font-extrabold text-slate-900 mb-2">Submit Practice Test?</h3>
-            <p className="text-slate-500 text-sm mb-6 leading-relaxed">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full border border-slate-100 dark:border-slate-700 animate-in zoom-in-95 duration-150">
+            <h3 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2">Submit Practice Test?</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
               Are you sure you want to conclude and submit your test? Here is your summary:
             </p>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 mb-6 space-y-2 text-xs font-semibold">
-              <div className="flex justify-between text-slate-600">
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 mb-6 space-y-2 text-xs font-semibold">
+              <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>Total Questions:</span>
-                <span className="font-bold text-slate-900">{totalQuestions}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span>
               </div>
-              <div className="flex justify-between text-emerald-700">
+              <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
                 <span>Answered:</span>
                 <span className="font-bold">{answeredCount}</span>
               </div>
-              <div className="flex justify-between text-amber-800">
+              <div className="flex justify-between text-amber-800 dark:text-amber-300">
                 <span>Marked for Review:</span>
                 <span className="font-bold">{markedCount}</span>
               </div>
-              <div className="flex justify-between text-slate-500">
+              <div className="flex justify-between text-slate-500 dark:text-slate-400">
                 <span>Unanswered:</span>
-                <span className="font-bold text-slate-900">{unansweredCount}</span>
+                <span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-3">
               <button 
                 onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                className="px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
               >
                 Continue Test
               </button>

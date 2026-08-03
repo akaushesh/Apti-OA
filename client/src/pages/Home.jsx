@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 import Dashboard from "./Dashboard";
 import API from "../api/axios";
 import { login } from "../app/authslice";
+import { setRole } from "../app/roleslice";
 import toast from "react-hot-toast";
 
 export default function Home() {
@@ -33,6 +34,9 @@ export default function Home() {
         const { accessToken, user } = res.data.data;
         localStorage.setItem("accessToken", accessToken);
         dispatch(login({ user, accessToken }));
+        if (user.role) {
+          dispatch(setRole(user.role));
+        }
         toast.success(`Welcome back, ${user.fullName || user.username}!`);
       } else {
         await API.post("/users/register", { 
@@ -58,13 +62,13 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 relative overflow-hidden">
+    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 relative overflow-hidden">
       
       {/* Background Decorative Glow Circles */}
       <div className="absolute top-1/4 -left-20 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 -right-20 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-md bg-white/95 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-white/20 relative z-10 animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-md bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl p-8 rounded-3xl shadow-2xl border border-white/20 dark:border-slate-700/80 relative z-10 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header Branding */}
         <div className="text-center mb-8">
@@ -73,21 +77,21 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Apti<span className="text-blue-600">OA</span> Portal
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Apti<span className="text-blue-600 dark:text-blue-400">OA</span> Portal
           </h1>
-          <p className="text-sm font-medium text-slate-500 mt-1">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">
             {isLogin ? "Sign in to access your practice tests" : "Create an account to get started"}
           </p>
         </div>
 
         {/* Form Mode Toggle Tabs */}
-        <div className="flex bg-slate-100 p-1 rounded-xl mb-6 border border-slate-200">
+        <div className="flex bg-slate-100 dark:bg-slate-900/60 p-1 rounded-xl mb-6 border border-slate-200 dark:border-slate-700">
           <button
             type="button"
             onClick={() => { setIsLogin(true); setErrorMsg(""); }}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-              isLogin ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              isLogin ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
             }`}
           >
             Log In
@@ -96,7 +100,7 @@ export default function Home() {
             type="button"
             onClick={() => { setIsLogin(false); setErrorMsg(""); }}
             className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-              !isLogin ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              !isLogin ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
             }`}
           >
             Sign Up
@@ -105,7 +109,7 @@ export default function Home() {
 
         {/* Error Alert Box */}
         {errorMsg && (
-          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-start gap-2.5 animate-in fade-in duration-150">
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-sm flex items-start gap-2.5 animate-in fade-in duration-150">
             <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -115,14 +119,14 @@ export default function Home() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
               Username
             </label>
             <div className="relative">
               <input 
                 type="text" 
                 placeholder="e.g. johndoe" 
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-slate-900 p-3 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-white p-3 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={username} 
                 onChange={e => setUsername(e.target.value)} 
                 required 
@@ -132,13 +136,13 @@ export default function Home() {
 
           {!isLogin && (
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                 Full Name
               </label>
               <input 
                 type="text" 
                 placeholder="e.g. John Doe" 
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-slate-900 p-3 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-white p-3 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={fullName} 
                 onChange={e => setFullName(e.target.value)} 
                 required 
@@ -147,14 +151,14 @@ export default function Home() {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
               Password
             </label>
             <div className="relative">
               <input 
                 type={showPassword ? "text" : "password"} 
                 placeholder="••••••••" 
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-slate-900 p-3 pr-10 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 dark:focus:border-blue-400 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-white p-3 pr-10 rounded-xl text-sm font-medium transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
                 required 
@@ -162,7 +166,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors p-1"
               >
                 {showPassword ? (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,12 +199,12 @@ export default function Home() {
         </form>
 
         {/* Footer Toggle Text */}
-        <p className="mt-6 text-center text-xs font-semibold text-slate-500">
+        <p className="mt-6 text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
           {isLogin ? "New to Apti-OA?" : "Already registered?"}{" "}
           <button 
             type="button"
             onClick={() => { setIsLogin(!isLogin); setErrorMsg(""); }} 
-            className="text-blue-600 font-bold hover:underline ml-1"
+            className="text-blue-600 dark:text-blue-400 font-bold hover:underline ml-1"
           >
             {isLogin ? "Create an account" : "Sign in here"}
           </button>

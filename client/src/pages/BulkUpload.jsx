@@ -40,7 +40,6 @@ export default function BulkUpload() {
         return { valid: false, error: "JSON array contains no questions", questions: [] };
       }
 
-      // Check schema for each item
       for (let i = 0; i < parsed.length; i++) {
         const q = parsed[i];
         if (!q.questionText || !q.optionA || !q.optionB || !q.optionC || !q.optionD || !q.correctAnswer) {
@@ -95,12 +94,12 @@ export default function BulkUpload() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-blue-600">Question Management</span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Question Management</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Bulk Upload Question Set
           </h1>
         </div>
-        <Link to="/" className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-4 py-2 rounded-xl">
+        <Link to="/" className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl">
           Back to Dashboard
         </Link>
       </div>
@@ -109,17 +108,17 @@ export default function BulkUpload() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Left Column: Input Form & Validation */}
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
+        <div className="bg-white dark:bg-slate-800 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
           <div>
             {/* Set Name Input */}
             <div className="mb-5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                 Question Set Title
               </label>
               <input 
                 type="text" 
                 placeholder="e.g. DBMS & SQL Aptitude Practice Set" 
-                className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white text-slate-900 p-3 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 text-slate-900 dark:text-white p-3 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={name} 
                 onChange={e => setName(e.target.value)} 
               />
@@ -128,8 +127,8 @@ export default function BulkUpload() {
             {/* Validation Banner */}
             <div className={`p-3.5 rounded-2xl mb-4 border text-xs font-semibold flex items-center justify-between transition-all ${
               parseResult.valid 
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
-                : 'bg-rose-50 text-rose-800 border-rose-200'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
             }`}>
               <div className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${parseResult.valid ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
@@ -146,7 +145,7 @@ export default function BulkUpload() {
 
             {/* JSON Code Input Textarea */}
             <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
                 JSON Questions Array
               </label>
               <textarea 
@@ -175,39 +174,39 @@ export default function BulkUpload() {
         </div>
 
         {/* Right Column: Live Dynamic Preview */}
-        <div className="bg-slate-50 p-6 sm:p-8 rounded-3xl border border-slate-200/80">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
-            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-slate-50 dark:bg-slate-900/60 p-6 sm:p-8 rounded-3xl border border-slate-200/80 dark:border-slate-700/80">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-slate-700">
+            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+              <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
               Live Question Preview
             </h2>
-            <span className="text-xs font-bold text-slate-400">{parseResult.questions.length} questions</span>
+            <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{parseResult.questions.length} questions</span>
           </div>
 
           {!parseResult.valid ? (
-            <div className="min-h-[300px] flex flex-col items-center justify-center p-6 text-center text-slate-400">
+            <div className="min-h-[300px] flex flex-col items-center justify-center p-6 text-center text-slate-400 dark:text-slate-500">
               <svg className="w-10 h-10 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
-              <p className="font-bold text-sm text-slate-600">Fix JSON format to see live question preview</p>
-              <p className="text-xs text-slate-400 mt-1">{parseResult.error}</p>
+              <p className="font-bold text-sm text-slate-600 dark:text-slate-400">Fix JSON format to see live question preview</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{parseResult.error}</p>
             </div>
           ) : (
             <div className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
               {parseResult.questions.map((q, idx) => (
-                <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md">
                       Question {idx + 1}
                     </span>
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/50">
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/50">
                       Answer: Option {q.correctAnswer}
                     </span>
                   </div>
-                  <h4 className="font-bold text-slate-900 text-sm mb-3">{q.questionText}</h4>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3">{q.questionText}</h4>
                   
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {['A', 'B', 'C', 'D'].map(opt => {
@@ -216,7 +215,7 @@ export default function BulkUpload() {
                         <div 
                           key={opt} 
                           className={`p-2.5 rounded-xl border font-medium flex items-center justify-between ${
-                            isCorrect ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-bold' : 'bg-slate-50 border-slate-200 text-slate-700'
+                            isCorrect ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100 font-bold' : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                           }`}
                         >
                           <span className="truncate"><strong className="mr-1.5 opacity-60">{opt}.</strong> {q[`option${opt}`]}</span>
