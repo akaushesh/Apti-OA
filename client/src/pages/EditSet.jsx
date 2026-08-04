@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 export default function EditSet() {
   const { id } = useParams();
   const [name, setName] = useState("");
+  const [category, setCategory] = useState("General");
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,6 +19,7 @@ export default function EditSet() {
       .then(res => {
         const set = res.data.data;
         setName(set.name);
+        setCategory(set.category || "General");
         
         const cleanQuestions = set.questions.map(q => {
           const { _id, ...rest } = q;
@@ -79,7 +81,8 @@ export default function EditSet() {
     setSaving(true);
     try {
       await API.put(`/mcq/question-sets/${id}`, { 
-        name: name.trim(), 
+        name: name.trim(),
+        category: category.trim() || "General",
         questions: parseResult.questions 
       });
       toast.success("Question set updated successfully!");
@@ -176,6 +179,19 @@ export default function EditSet() {
                 className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 text-slate-900 dark:text-white p-3 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
                 value={name} 
                 onChange={e => setName(e.target.value)} 
+              />
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Category
+              </label>
+              <input 
+                type="text" 
+                placeholder="e.g. Database Management" 
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 text-slate-900 dark:text-white p-3 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                value={category} 
+                onChange={e => setCategory(e.target.value)} 
               />
             </div>
 

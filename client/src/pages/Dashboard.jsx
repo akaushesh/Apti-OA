@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all"); // 'all' | 'my-sets'
+  const [selectedCategory, setSelectedCategory] = useState("All Categories");
   
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: null, id: null });
   const navigate = useNavigate();
@@ -62,10 +63,13 @@ export default function Dashboard() {
   };
 
   // Filter logic
+  const categories = ["All Categories", ...new Set(sets.map(s => s.category || "General"))];
+
   const filteredSets = sets.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTab = activeTab === "my-sets" ? (currentUser && s.userId === currentUser._id) : true;
-    return matchesSearch && matchesTab;
+    const matchesCategory = selectedCategory === "All Categories" ? true : (s.category || "General") === selectedCategory;
+    return matchesSearch && matchesTab && matchesCategory;
   });
 
   const filteredAttempts = attempts.filter(a => {
@@ -201,6 +205,18 @@ export default function Dashboard() {
           />
         </div>
 
+        <div className="shrink-0 flex items-center">
+          <select 
+            value={selectedCategory} 
+            onChange={e => setSelectedCategory(e.target.value)}
+            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-xs"
+          >
+            {categories.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Tab Filters */}
         <div className="flex bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl shrink-0">
           <button 
@@ -275,7 +291,8 @@ export default function Dashboard() {
                         )}
                       </div>
                       <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-2">
-                        <span>Created {new Date(s.createdAt).toLocaleDateString()}</span>
+                        <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md font-semibold text-slate-600 dark:text-slate-300">{s.category || "General"}</span>
+                        <span>• Created {new Date(s.createdAt).toLocaleDateString()}</span>
                       </p>
                     </div>
 

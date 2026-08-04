@@ -4,7 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { QuestionSet, Attempt } from "../models/mcq.model.js";
 
 export const createQuestionSet = asyncHandler(async (req, res) => {
-    const { name, questions } = req.body;
+    const { name, category, questions } = req.body;
     if (!name || !questions || !questions.length) {
         throw new ApiError(400, "Name and questions are required");
     }
@@ -12,6 +12,7 @@ export const createQuestionSet = asyncHandler(async (req, res) => {
     const questionSet = await QuestionSet.create({
         userId: req.user._id,
         name,
+        category: category || 'General',
         questions
     });
 
@@ -19,7 +20,11 @@ export const createQuestionSet = asyncHandler(async (req, res) => {
 });
 
 export const getQuestionSets = asyncHandler(async (req, res) => {
-    const questionSets = await QuestionSet.find({}).select("-questions");
+    const filter = {};
+    if (req.query.category) {
+        filter.category = req.query.category;
+    }
+    const questionSets = await QuestionSet.find(filter).select("-questions");
     res.status(200).json(new ApiResponse(200, "Fetched question sets", questionSets));
 });
 
@@ -59,10 +64,10 @@ export const updateAttempt = asyncHandler(async (req, res) => {
 });
 
 export const updateQuestionSet = asyncHandler(async (req, res) => {
-    const { name, questions } = req.body;
+    const { name, category, questions } = req.body;
     const questionSet = await QuestionSet.findOneAndUpdate(
         { _id: req.params.id, userId: req.user._id },
-        { name, questions },
+        { name, category, questions },
         { new: true }
     );
     if (!questionSet) throw new ApiError(404, "Question set not found or you do not have permission");

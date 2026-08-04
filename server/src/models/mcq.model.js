@@ -12,6 +12,7 @@ const questionSchema = new Schema({
 const questionSetSchema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
+    category: { type: String, default: 'General' },
     questions: [questionSchema]
 }, { timestamps: true });
 
