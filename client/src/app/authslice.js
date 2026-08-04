@@ -13,23 +13,28 @@ export const authSlice = createSlice({
   initialState,
   reducers: {
     login: (state, action) => {
-        state.status = true;
-        state.userData = action.payload.user;
-        state.accessToken = action.payload.accessToken;
-        state.refreshToken = action.payload.refreshToken;
+      const payloadUser = action.payload?.user || (action.payload?.username ? action.payload : null);
+      const accessToken = action.payload?.accessToken || localStorage.getItem("accessToken");
+      const refreshToken = action.payload?.refreshToken || null;
 
-        storage.set("auth", {
-            status: true,
-            userData: action.payload.user,
-            accessToken: action.payload.accessToken,
-            refreshToken: action.payload.refreshToken,
-        });
+      state.status = true;
+      state.userData = payloadUser;
+      state.accessToken = accessToken;
+      state.refreshToken = refreshToken;
+
+      storage.set("auth", {
+        status: true,
+        userData: payloadUser,
+        accessToken,
+        refreshToken,
+      });
     },
 
     logout: (state) => {
       state.status = false;
       state.userData = null;
-      state.token = null;
+      state.accessToken = null;
+      state.refreshToken = null;
       storage.remove('auth');
     },
   },
