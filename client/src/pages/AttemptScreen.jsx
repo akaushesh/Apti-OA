@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import API from "../api/axios";
+import { seededShuffle } from "../utils/shuffle";
 
 export default function AttemptScreen() {
   const { id } = useParams();
@@ -24,7 +25,11 @@ export default function AttemptScreen() {
       setAnswers(savedAns);
 
       API.get(`/mcq/question-sets/${a.questionSetId._id || a.questionSetId}`).then(res2 => {
-        setQs(res2.data.data);
+        const qsData = res2.data.data;
+        if (qsData.questions) {
+          qsData.questions = seededShuffle(qsData.questions, a._id.toString());
+        }
+        setQs(qsData);
       });
     }).catch(console.error);
   }, [id]);

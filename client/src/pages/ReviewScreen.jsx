@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import API from "../api/axios";
+import { seededShuffle } from "../utils/shuffle";
 import toast from "react-hot-toast";
 
 export default function ReviewScreen() {
@@ -12,7 +13,11 @@ export default function ReviewScreen() {
 
   useEffect(() => {
     API.get(`/mcq/attempts/${id}`).then(res => {
-      setAttempt(res.data.data);
+      const a = res.data.data;
+      if (a.questionSetId && a.questionSetId.questions) {
+        a.questionSetId.questions = seededShuffle(a.questionSetId.questions, a._id.toString());
+      }
+      setAttempt(a);
     }).catch(console.error);
   }, [id]);
 
