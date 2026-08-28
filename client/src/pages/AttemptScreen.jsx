@@ -46,7 +46,7 @@ export default function AttemptScreen() {
       .then(res2 => {
         const qsData = res2.data.data;
         if (qsData.questions) {
-          qsData.questions = seededShuffle(qsData.questions, a._id.toString());
+          qsData.questions = seededShuffle(qsData.questions, id);
         }
         setQs(qsData);
       })

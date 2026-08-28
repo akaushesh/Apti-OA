@@ -11,7 +11,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all"); // 'all' | 'my-sets'
-  const [selectedCategory, setSelectedCategory] = useState("All Categories");
+  const [selectedCategory, setSelectedCategory] = useState(() => {
+    return localStorage.getItem("dashboardSelectedCategory") || "All Categories";
+  });
   
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: null, id: null });
   const navigate = useNavigate();
@@ -38,6 +40,10 @@ export default function Dashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("dashboardSelectedCategory", selectedCategory);
+  }, [selectedCategory]);
 
   const confirmDelete = async () => {
     const { type, id } = confirmModal;
@@ -74,7 +80,9 @@ export default function Dashboard() {
 
   const filteredAttempts = attempts.filter(a => {
     const setName = a.questionSetId?.name || "";
-    return setName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = setName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === "All Categories" ? true : (a.questionSetId?.category || "General") === selectedCategory;
+    return matchesSearch && matchesCategory;
   });
 
   // Calculate statistics
@@ -271,7 +279,7 @@ export default function Dashboard() {
               </Link>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
               {filteredSets.map(s => {
                 const isOwner = currentUser && currentUser._id === s.userId;
                 return (
@@ -347,7 +355,7 @@ export default function Dashboard() {
               <p className="text-slate-400 text-xs mt-1">Select a practice set on the left to start your first assessment!</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
               {filteredAttempts.map(a => {
                 const isCompleted = a.status === 'completed';
                 const scorePercent = Math.round((a.scoreAtTimeUp / (a.totalQuestions || 1)) * 100);

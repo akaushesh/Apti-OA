@@ -92,7 +92,7 @@ export const deleteAttempt = asyncHandler(async (req, res) => {
 
 export const getAttempts = asyncHandler(async (req, res) => {
     const attempts = await Attempt.find({ userId: req.user._id })
-        .populate("questionSetId", "name")
+        .populate("questionSetId", "name category")
         .sort({ createdAt: -1 });
     res.status(200).json(new ApiResponse(200, "Fetched attempts", attempts));
 });
