@@ -26,10 +26,17 @@ const answerSchema = new Schema({
     answeredAt: { type: Date }
 });
 
+const sectionTimerSchema = new Schema({
+    section: { type: String, required: true },
+    durationSec: { type: Number, required: true },
+}, { _id: false });
+
 const attemptSchema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     questionSetId: { type: Schema.Types.ObjectId, ref: "QuestionSet", required: true },
     section: { type: String, default: '' },
+    mockMode: { type: Boolean, default: false },
+    sectionTimers: [sectionTimerSchema],   // per-section durations when mockMode=true
     timerDurationSec: { type: Number, required: true },
     totalQuestions: { type: Number, required: true },
     answers: [answerSchema],

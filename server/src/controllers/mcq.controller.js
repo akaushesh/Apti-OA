@@ -35,12 +35,14 @@ export const getQuestionSetById = asyncHandler(async (req, res) => {
 });
 
 export const startAttempt = asyncHandler(async (req, res) => {
-    const { questionSetId, section, timerDurationSec, totalQuestions } = req.body;
+    const { questionSetId, section, mockMode, sectionTimers, timerDurationSec, totalQuestions } = req.body;
 
     const attempt = await Attempt.create({
         userId: req.user._id,
         questionSetId,
         section: section || '',
+        mockMode: !!mockMode,
+        sectionTimers: sectionTimers || [],
         timerDurationSec,
         totalQuestions,
         answers: [],

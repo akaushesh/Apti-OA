@@ -16,8 +16,8 @@ html.dark {
 }
 
 html:not(.dark) {
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: #0f172a;
+  color: #f8fafc;
 }
 
 html, body, #root {

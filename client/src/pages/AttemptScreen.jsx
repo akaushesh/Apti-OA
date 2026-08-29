@@ -10,47 +10,79 @@ export default function AttemptScreen() {
 
   const [attempt, setAttempt] = useState(null);
   const [qs, setQs] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [currIdx, setCurrIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // ── shared state ──
   const [answers, setAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [showMobileGrid, setShowMobileGrid] = useState(false);
+
+  // ── single-mode state ──
+  const [timeLeft, setTimeLeft] = useState(0);
   const [timeUp, setTimeUp] = useState(false);
   const [untimedMode, setUntimedMode] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [showMobileGrid, setShowMobileGrid] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [currIdx, setCurrIdx] = useState(0);
 
+  // ── mock-mode state ──
+  // sectionOrder: string[]  — ordered list of sections
+  // activeSectionIdx: number — which section the user is currently on
+  // submittedSections: Set<string> — sections already locked-in
+  // sectionTimeLeft: number — timer for current section (or global remaining)
+  // sectionTimeUp: bool
+  const [sectionOrder, setSectionOrder] = useState([]);
+  const [activeSectionIdx, setActiveSectionIdx] = useState(0);
+  const [submittedSections, setSubmittedSections] = useState(new Set());
+  const [sectionTimeLeft, setSectionTimeLeft] = useState(0);
+  const [sectionTimeUp, setSectionTimeUp] = useState(false);
+  const [showSectionSubmitModal, setShowSectionSubmitModal] = useState(false);
+  const [mockCurrIdx, setMockCurrIdx] = useState(0); // idx within current section's questions
+
+  // ── load ──
   useEffect(() => {
     setLoading(true);
     API.get(`/mcq/attempts/${id}`)
       .then(res => {
         const a = res.data.data;
         setAttempt(a);
-        setTimeLeft(a.timerDurationSec || 600);
-        
+
         const savedAns = {};
         if (a.answers) {
           a.answers.forEach(ans => {
-            savedAns[ans.questionId] = { 
-              option: ans.selectedOption, 
-              isUntimed: ans.isUntimed || false 
-            };
+            savedAns[ans.questionId] = { option: ans.selectedOption, isUntimed: ans.isUntimed || false };
           });
         }
         setAnswers(savedAns);
+
+        if (!a.mockMode) setTimeLeft(a.timerDurationSec || 600);
 
         const setId = a.questionSetId?._id || a.questionSetId;
         return API.get(`/mcq/question-sets/${setId}`).then(res2 => ({ res2, a }));
       })
       .then(({ res2, a }) => {
         const qsData = res2.data.data;
-        // Filter to section if one was chosen, then shuffle within-session using attemptId as seed
         let questions = qsData.questions || [];
-        if (a.section) {
-          questions = questions.filter(q => q.section === a.section);
+
+        if (a.mockMode) {
+          // Preserve section order from sectionTimers, then shuffle within each section
+          const order = (a.sectionTimers || []).map(t => t.section);
+          setSectionOrder(order);
+          // Shuffle each section's questions independently using attemptId+section as seed
+          const shuffled = order.flatMap(sec => {
+            const secQs = questions.filter(q => q.section === sec);
+            return seededShuffle(secQs, id + sec);
+          });
+          qsData.questions = shuffled;
+          // Init timer for first section
+          const firstTimer = a.sectionTimers?.[0];
+          if (firstTimer) setSectionTimeLeft(firstTimer.durationSec);
+        } else {
+          // Single mode: filter + shuffle
+          if (a.section) questions = questions.filter(q => q.section === a.section);
+          qsData.questions = seededShuffle(questions, id);
         }
-        qsData.questions = seededShuffle(questions, id);
+
         setQs(qsData);
       })
       .catch(err => {
@@ -61,25 +93,44 @@ export default function AttemptScreen() {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
+  // ── single mode timer ──
   useEffect(() => {
+    if (!attempt || attempt.mockMode) return;
     if (timeLeft > 0 && !timeUp && !untimedMode) {
-      const timer = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
+      return () => clearTimeout(t);
     } else if (timeLeft === 0 && attempt && !timeUp && !untimedMode) {
       handleTimeUp();
     }
   }, [timeLeft, timeUp, attempt, untimedMode]);
 
-  const handleTimeUp = async () => {
-    setTimeUp(true);
-    toast.error("Time is up! Your timed attempt has concluded.", { duration: 5000 });
-    await saveProgress(true);
+  // ── mock mode section timer ──
+  useEffect(() => {
+    if (!attempt?.mockMode || sectionTimeUp) return;
+    if (sectionTimeLeft > 0) {
+      const t = setTimeout(() => setSectionTimeLeft(p => p - 1), 1000);
+      return () => clearTimeout(t);
+    } else if (sectionTimeLeft === 0 && qs && sectionOrder.length > 0) {
+      handleSectionTimeUp();
+    }
+  }, [sectionTimeLeft, sectionTimeUp, attempt, qs, sectionOrder]);
+
+  // ── helpers ──
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
+
+  // Questions belonging to the current mock section
+  const currentSectionName = sectionOrder[activeSectionIdx] || '';
+  const currentSectionQuestions = qs
+    ? qs.questions.filter(q => q.section === currentSectionName)
+    : [];
 
   const saveProgress = async (isSubmit = false) => {
     if (!qs || !attempt) return;
     setSaving(true);
-
     let score = 0;
     const ansArray = Object.keys(answers).map(qId => {
       const q = qs.questions.find(x => x._id === qId);
@@ -87,7 +138,6 @@ export default function AttemptScreen() {
       if (q && q.correctAnswer === selected) score++;
       return { questionId: qId, selectedOption: selected, isUntimed: answers[qId].isUntimed };
     });
-
     try {
       await API.patch(`/mcq/attempts/${id}`, {
         answers: ansArray,
@@ -95,91 +145,444 @@ export default function AttemptScreen() {
         finalScoreIfUntimed: score,
         status: isSubmit ? 'completed' : 'in-progress'
       });
-      if (!isSubmit) {
-        toast.success("Progress saved", { duration: 1500 });
-      }
+      if (!isSubmit) toast.success("Progress saved", { duration: 1500 });
     } catch (e) {
-      console.error(e);
       toast.error("Failed to save progress");
     } finally {
       setSaving(false);
     }
   };
 
+  // ── single mode: time up ──
+  const handleTimeUp = async () => {
+    setTimeUp(true);
+    toast.error("Time is up!", { duration: 5000 });
+    await saveProgress(true);
+  };
+
+  // ── mock mode: section time up ──
+  const handleSectionTimeUp = async () => {
+    setSectionTimeUp(true);
+    toast.error(`Time up for ${currentSectionName}!`, { duration: 4000 });
+    await saveProgress(false);
+  };
+
+  // Submit current section and advance to next
+  const submitSection = async () => {
+    const isLastSection = activeSectionIdx >= sectionOrder.length - 1;
+    await saveProgress(isLastSection);
+    setSubmittedSections(prev => new Set([...prev, currentSectionName]));
+    setShowSectionSubmitModal(false);
+    setSectionTimeUp(false);
+
+    if (isLastSection) {
+      toast.success("Mock test complete!");
+      navigate('/');
+    } else {
+      const nextIdx = activeSectionIdx + 1;
+      setActiveSectionIdx(nextIdx);
+      setMockCurrIdx(0);
+      const nextTimer = attempt.sectionTimers?.[nextIdx];
+      if (nextTimer) setSectionTimeLeft(nextTimer.durationSec);
+      toast.success(`Section submitted! Moving to: ${sectionOrder[nextIdx]}`, { duration: 3000 });
+    }
+  };
+
+  // ── option select ──
   const handleOptionSelect = (opt) => {
-    if (!qs || !qs.questions[currIdx]) return;
-    const qId = qs.questions[currIdx]._id;
-    setAnswers(prev => ({
-      ...prev, 
-      [qId]: { option: opt, isUntimed: untimedMode }
-    }));
+    if (!qs) return;
+    const questions = attempt?.mockMode ? currentSectionQuestions : qs.questions;
+    const idx = attempt?.mockMode ? mockCurrIdx : currIdx;
+    const q = questions[idx];
+    if (!q) return;
+    setAnswers(prev => ({ ...prev, [q._id]: { option: opt, isUntimed: untimedMode } }));
   };
 
   const toggleMarkForReview = () => {
-    if (!qs || !qs.questions[currIdx]) return;
-    const qId = qs.questions[currIdx]._id;
-    setMarkedForReview(prev => ({ ...prev, [qId]: !prev[qId] }));
+    const questions = attempt?.mockMode ? currentSectionQuestions : qs.questions;
+    const idx = attempt?.mockMode ? mockCurrIdx : currIdx;
+    const q = questions[idx];
+    if (!q) return;
+    setMarkedForReview(prev => ({ ...prev, [q._id]: !prev[q._id] }));
   };
 
+  // ── keyboard shortcuts ──
   const handleKeyDown = useCallback((e) => {
-    if (showSubmitModal || timeUp) return;
-    
+    if (showSubmitModal || showSectionSubmitModal) return;
+    const isMock = attempt?.mockMode;
+    const questions = isMock ? currentSectionQuestions : qs?.questions;
+    const currI = isMock ? mockCurrIdx : currIdx;
+    const setIdx = isMock ? setMockCurrIdx : setCurrIdx;
+
     if (e.key === 'ArrowRight') {
-      if (qs && currIdx < qs.questions.length - 1) setCurrIdx(prev => prev + 1);
+      if (questions && currI < questions.length - 1) setIdx(p => p + 1);
     } else if (e.key === 'ArrowLeft') {
-      if (currIdx > 0) setCurrIdx(prev => prev - 1);
-    } else if (['a', 'A', '1'].includes(e.key)) {
-      handleOptionSelect('A');
-    } else if (['b', 'B', '2'].includes(e.key)) {
-      handleOptionSelect('B');
-    } else if (['c', 'C', '3'].includes(e.key)) {
-      handleOptionSelect('C');
-    } else if (['d', 'D', '4'].includes(e.key)) {
-      handleOptionSelect('D');
-    } else if (['m', 'M'].includes(e.key)) {
-      toggleMarkForReview();
-    }
-  }, [qs, currIdx, showSubmitModal, timeUp, answers]);
+      if (currI > 0) setIdx(p => p - 1);
+    } else if (['a', 'A', '1'].includes(e.key)) handleOptionSelect('A');
+    else if (['b', 'B', '2'].includes(e.key)) handleOptionSelect('B');
+    else if (['c', 'C', '3'].includes(e.key)) handleOptionSelect('C');
+    else if (['d', 'D', '4'].includes(e.key)) handleOptionSelect('D');
+    else if (['m', 'M'].includes(e.key)) toggleMarkForReview();
+  }, [qs, currIdx, mockCurrIdx, showSubmitModal, showSectionSubmitModal, attempt, currentSectionQuestions, answers]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  if (loading || !qs || !attempt) {
+  if (loading || !qs || !attempt) return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-center items-center p-6">
+      <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4" />
+      <p className="font-semibold text-slate-300">Loading exam interface...</p>
+    </div>
+  );
+
+  // ── MOCK MODE render ──
+  if (attempt.mockMode) {
+    const secQs = currentSectionQuestions;
+    const currentQ = secQs[mockCurrIdx];
+    const answeredInSection = secQs.filter(q => answers[q._id]?.option).length;
+    const markedInSection = secQs.filter(q => markedForReview[q._id]).length;
+    const isLastSection = activeSectionIdx >= sectionOrder.length - 1;
+    const isLowTime = sectionTimeLeft < 120 && !sectionTimeUp;
+
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-center items-center p-6">
-        <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="font-semibold text-slate-300">Loading exam interface...</p>
+      <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden select-none">
+
+        {/* Header */}
+        <header className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-md shrink-0 z-30">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setShowMobileGrid(!showMobileGrid)}
+              className="md:hidden p-2 text-slate-300 hover:text-white bg-slate-800 rounded-lg"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-sm sm:text-base text-white tracking-tight truncate max-w-[160px] sm:max-w-sm">
+                {qs.name}
+              </h1>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-violet-400">
+                {currentSectionName} · Q{mockCurrIdx + 1}/{secQs.length}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Section progress pills */}
+            <div className="hidden sm:flex items-center gap-1">
+              {sectionOrder.map((sec, i) => (
+                <span
+                  key={sec}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
+                    submittedSections.has(sec)
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                      : i === activeSectionIdx
+                      ? 'bg-violet-500/20 text-violet-300 border-violet-500/40'
+                      : 'bg-slate-800 text-slate-500 border-slate-700'
+                  }`}
+                >
+                  {i + 1}. {sec}
+                </span>
+              ))}
+            </div>
+
+            {/* Section timer */}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-mono font-black text-sm transition-all ${
+              sectionTimeUp
+                ? 'bg-rose-500/30 text-rose-400 border border-rose-500/50'
+                : isLowTime
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 animate-pulse'
+                : 'bg-slate-800 text-violet-400 border border-slate-700'
+            }`}>
+              <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{sectionTimeUp ? "0:00" : formatTime(sectionTimeLeft)}</span>
+            </div>
+
+            <button
+              onClick={() => saveProgress(false)}
+              disabled={saving}
+              className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </header>
+
+        <div className="flex flex-1 overflow-hidden relative">
+
+          {/* Sidebar — current section palette */}
+          <div className={`w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 p-4 flex flex-col justify-between overflow-y-auto shrink-0 transition-transform ${
+            showMobileGrid ? 'absolute inset-y-0 left-0 z-40 shadow-2xl' : 'hidden md:flex'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  {currentSectionName}
+                </h2>
+                {showMobileGrid && (
+                  <button onClick={() => setShowMobileGrid(false)} className="text-slate-400">✕</button>
+                )}
+              </div>
+
+              {/* Section tabs */}
+              <div className="flex flex-col gap-1 mb-4">
+                {sectionOrder.map((sec, i) => (
+                  <div
+                    key={sec}
+                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-bold ${
+                      submittedSections.has(sec)
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                        : i === activeSectionIdx
+                        ? 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300'
+                        : 'text-slate-400 dark:text-slate-600'
+                    }`}
+                  >
+                    <span>{i + 1}. {sec}</span>
+                    {submittedSections.has(sec) && <span>✓</span>}
+                    {i === activeSectionIdx && !submittedSections.has(sec) && <span className="text-violet-500">▶</span>}
+                    {i > activeSectionIdx && <span>🔒</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Question grid for current section */}
+              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">Question Map</p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {secQs.map((q, idx) => {
+                  const isAnswered = !!answers[q._id]?.option;
+                  const isMarked = !!markedForReview[q._id];
+                  const isSelected = mockCurrIdx === idx;
+                  let cls = "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600";
+                  if (isAnswered) cls = "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 font-bold";
+                  if (isMarked) cls = "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-700 font-bold";
+                  return (
+                    <button
+                      key={q._id}
+                      onClick={() => { setMockCurrIdx(idx); setShowMobileGrid(false); }}
+                      className={`h-9 rounded-xl border text-xs font-bold flex items-center justify-center transition-all relative ${cls} ${isSelected ? 'ring-2 ring-violet-600 ring-offset-1 scale-105 z-10' : ''}`}
+                    >
+                      {idx + 1}
+                      {isMarked && <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full border border-white dark:border-slate-800" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stats + submit section */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400" />Answered</span>
+                <span className="font-bold text-slate-900 dark:text-white">{answeredInSection}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400" />Marked</span>
+                <span className="font-bold text-slate-900 dark:text-white">{markedInSection}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-slate-100 dark:bg-slate-700 border border-slate-300" />Unanswered</span>
+                <span className="font-bold text-slate-900 dark:text-white">{secQs.length - answeredInSection}</span>
+              </div>
+              <button
+                onClick={() => setShowSectionSubmitModal(true)}
+                className="w-full mt-3 py-2.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold rounded-xl text-xs transition-all"
+              >
+                {isLastSection ? "Submit & Finish" : "Submit Section →"}
+              </button>
+            </div>
+          </div>
+
+          {/* Question canvas */}
+          <div className="flex-1 p-4 sm:p-8 overflow-y-auto flex flex-col justify-between relative bg-slate-50 dark:bg-slate-900">
+
+            {/* Section time-up overlay */}
+            {sectionTimeUp && (
+              <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                  <div className="w-16 h-16 bg-rose-100 dark:bg-rose-950/60 text-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-1">Section Time Up!</h2>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm mb-2">
+                    <strong className="text-slate-700 dark:text-slate-200">{currentSectionName}</strong> — answered {answeredInSection} of {secQs.length}
+                  </p>
+                  <p className="text-xs text-slate-400 mb-6">Your answers so far are saved. Submit to continue.</p>
+                  <button
+                    onClick={submitSection}
+                    disabled={saving}
+                    className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl text-sm transition-colors disabled:opacity-60"
+                  >
+                    {isLastSection ? "Submit & See Results" : `Submit & Start: ${sectionOrder[activeSectionIdx + 1]}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {currentQ ? (
+              <>
+                {/* Question card */}
+                <div className="max-w-3xl mx-auto w-full bg-white dark:bg-slate-800 p-6 sm:p-10 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-700/80 mb-6">
+                  <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100 dark:border-slate-700">
+                    <span className="text-xs font-extrabold text-violet-600 dark:text-violet-400 uppercase tracking-wider bg-violet-50 dark:bg-violet-950/60 px-3 py-1 rounded-lg">
+                      Q{mockCurrIdx + 1} / {secQs.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={toggleMarkForReview}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        markedForReview[currentQ._id]
+                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill={markedForReview[currentQ._id] ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                      <span>{markedForReview[currentQ._id] ? 'Marked' : 'Mark for Review'}</span>
+                    </button>
+                  </div>
+
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">
+                    {currentQ.questionText}
+                  </h2>
+
+                  <div className="space-y-3">
+                    {['A', 'B', 'C', 'D'].map(opt => {
+                      const isSelected = answers[currentQ._id]?.option === opt;
+                      return (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => handleOptionSelect(opt)}
+                          className={`w-full text-left p-4 rounded-2xl border font-medium text-sm sm:text-base flex items-center justify-between transition-all group ${
+                            isSelected
+                              ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 text-blue-950 dark:text-blue-100 font-semibold'
+                              : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border-slate-200/90 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0 pr-4">
+                            <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
+                              isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-600'
+                            }`}>{opt}</span>
+                            <span className="break-words">{currentQ[`option${opt}`]}</span>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                            isSelected ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 dark:border-slate-600'
+                          }`}>
+                            {isSelected && <div className="w-2 h-2 rounded-full bg-white dark:bg-slate-900" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-[11px] font-semibold text-slate-400 mt-6 text-right hidden sm:block">
+                    Tip: <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">1-4</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">A-D</kbd> to select
+                  </p>
+                </div>
+
+                {/* Nav */}
+                <div className="max-w-3xl mx-auto w-full flex items-center justify-between gap-4">
+                  <button
+                    disabled={mockCurrIdx === 0}
+                    onClick={() => setMockCurrIdx(p => p - 1)}
+                    className="px-6 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm disabled:opacity-40 transition-colors"
+                  >
+                    ← Previous
+                  </button>
+                  {mockCurrIdx === secQs.length - 1 ? (
+                    <button
+                      onClick={() => setShowSectionSubmitModal(true)}
+                      className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-violet-600/20 transition-all"
+                    >
+                      {isLastSection ? "Submit & Finish" : "Submit Section →"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setMockCurrIdx(p => p + 1)}
+                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-blue-600/20 transition-all"
+                    >
+                      Next →
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-400 text-sm font-semibold">
+                No questions in this section.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Section submit confirmation */}
+        {showSectionSubmitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full border border-slate-100 dark:border-slate-700 animate-in zoom-in-95 duration-150">
+              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white mb-1">
+                Submit {currentSectionName}?
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-5 leading-relaxed">
+                {isLastSection
+                  ? "This is the last section. Submitting will finalize the mock test."
+                  : `Next: ${sectionOrder[activeSectionIdx + 1]}`}
+              </p>
+              <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 mb-5 space-y-2 text-xs font-semibold">
+                <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                  <span>Questions:</span><span className="font-bold text-slate-900 dark:text-white">{secQs.length}</span>
+                </div>
+                <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
+                  <span>Answered:</span><span className="font-bold">{answeredInSection}</span>
+                </div>
+                <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>Unanswered:</span><span className="font-bold text-slate-900 dark:text-white">{secQs.length - answeredInSection}</span>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSectionSubmitModal(false)}
+                  className="flex-1 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
+                >
+                  Continue Section
+                </button>
+                <button
+                  onClick={submitSection}
+                  disabled={saving}
+                  className="flex-1 py-2.5 text-sm font-bold bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl shadow-md shadow-violet-600/20 transition-all disabled:opacity-60"
+                >
+                  {saving ? "Saving..." : isLastSection ? "Finish Mock" : "Submit →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
+  // ── SINGLE MODE render (unchanged logic, same UI) ──
   const currentQ = qs.questions[currIdx];
   const totalQuestions = qs.questions.length;
-
-  const formatTime = (sec) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
   const isLowTime = timeLeft < 120 && !untimedMode;
-
   const answeredCount = Object.values(answers).filter(v => v.option).length;
   const markedCount = Object.values(markedForReview).filter(Boolean).length;
   const unansweredCount = totalQuestions - answeredCount;
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden select-none">
-      
-      {/* Top Examination Header */}
+
       <header className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-md shrink-0 z-30">
         <div className="flex items-center gap-3 min-w-0">
-          <button 
+          <button
             onClick={() => setShowMobileGrid(!showMobileGrid)}
             className="md:hidden p-2 text-slate-300 hover:text-white bg-slate-800 rounded-lg"
-            title="Question Map"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -195,7 +598,6 @@ export default function AttemptScreen() {
           </div>
         </div>
 
-        {/* Timer Display */}
         <div className="flex items-center gap-3">
           {!untimedMode ? (
             <div className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono font-black text-sm sm:text-base transition-all ${
@@ -211,7 +613,6 @@ export default function AttemptScreen() {
               Untimed Practice Mode
             </div>
           )}
-
           <button
             onClick={() => saveProgress(false)}
             disabled={saving}
@@ -222,91 +623,47 @@ export default function AttemptScreen() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden relative">
-        
-        {/* Left Sidebar Question Palette */}
+
         <div className={`w-72 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 p-5 flex flex-col justify-between overflow-y-auto shrink-0 transition-transform ${
           showMobileGrid ? 'absolute inset-y-0 left-0 z-40 shadow-2xl' : 'hidden md:flex'
         }`}>
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Question Palette
-              </h2>
-              {showMobileGrid && (
-                <button onClick={() => setShowMobileGrid(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                  ✕
-                </button>
-              )}
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">Question Palette</h2>
+              {showMobileGrid && <button onClick={() => setShowMobileGrid(false)} className="text-slate-400">✕</button>}
             </div>
-
-            {/* Question Grid */}
             <div className="grid grid-cols-5 gap-2 max-h-[60vh] overflow-y-auto pr-1">
               {qs.questions.map((q, idx) => {
                 const isSelected = currIdx === idx;
                 const isAnswered = !!answers[q._id]?.option;
                 const isMarked = !!markedForReview[q._id];
-
                 let bgClass = "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 border-slate-200 dark:border-slate-600";
                 if (isAnswered) bgClass = "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 font-bold";
                 if (isMarked) bgClass = "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-400 dark:border-amber-700 font-bold";
-
                 return (
                   <button
                     key={q._id}
                     onClick={() => { setCurrIdx(idx); setShowMobileGrid(false); }}
-                    className={`h-10 rounded-xl border text-xs font-bold flex items-center justify-center transition-all relative ${bgClass} ${
-                      isSelected ? 'ring-2 ring-blue-600 dark:ring-blue-400 ring-offset-1 scale-105 z-10' : ''
-                    }`}
+                    className={`h-10 rounded-xl border text-xs font-bold flex items-center justify-center transition-all relative ${bgClass} ${isSelected ? 'ring-2 ring-blue-600 dark:ring-blue-400 ring-offset-1 scale-105 z-10' : ''}`}
                   >
                     {idx + 1}
-                    {isMarked && (
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white dark:border-slate-800" />
-                    )}
+                    {isMarked && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-500 rounded-full border border-white dark:border-slate-800" />}
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Palette Legend & Stats */}
           <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 text-xs font-semibold text-slate-600 dark:text-slate-400">
-            <div className="flex justify-between items-center">
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-950 border border-emerald-400 dark:border-emerald-700" />
-                Answered
-              </span>
-              <span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-amber-100 dark:bg-amber-950 border border-amber-400 dark:border-amber-700" />
-                Marked
-              </span>
-              <span className="font-bold text-slate-900 dark:text-white">{markedCount}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600" />
-                Unanswered
-              </span>
-              <span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span>
-            </div>
-
-            <button
-              onClick={() => setShowSubmitModal(true)}
-              className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all text-xs"
-            >
-              Submit Exam
-            </button>
+            <div className="flex justify-between items-center"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-950 border border-emerald-400 dark:border-emerald-700" />Answered</span><span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span></div>
+            <div className="flex justify-between items-center"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-amber-100 dark:bg-amber-950 border border-amber-400 dark:border-amber-700" />Marked</span><span className="font-bold text-slate-900 dark:text-white">{markedCount}</span></div>
+            <div className="flex justify-between items-center"><span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600" />Unanswered</span><span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span></div>
+            <button onClick={() => setShowSubmitModal(true)} className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all text-xs">Submit Exam</button>
           </div>
         </div>
 
-        {/* Center Question Canvas */}
         <div className="flex-1 p-4 sm:p-8 overflow-y-auto flex flex-col justify-between relative bg-slate-50 dark:bg-slate-900">
-          
-          {/* Time Up Overlay Modal */}
+
           {timeUp && !untimedMode && (
             <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
               <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
@@ -316,36 +673,20 @@ export default function AttemptScreen() {
                   </svg>
                 </div>
                 <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white mb-1">Time Expired!</h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-                  You answered <span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span> out of <span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span> questions.
-                </p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">You answered <span className="font-bold text-slate-900 dark:text-white">{answeredCount}</span> out of <span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span> questions.</p>
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <button 
-                    onClick={() => navigate('/')} 
-                    className="flex-1 py-3 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white font-bold rounded-xl text-sm transition-colors"
-                  >
-                    Go to Dashboard
-                  </button>
-                  <button 
-                    onClick={() => setUntimedMode(true)} 
-                    className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm transition-colors"
-                  >
-                    Continue Untimed
-                  </button>
+                  <button onClick={() => navigate('/')} className="flex-1 py-3 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl text-sm transition-colors">Go to Dashboard</button>
+                  <button onClick={() => setUntimedMode(true)} className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm transition-colors">Continue Untimed</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Question Card */}
           <div className="max-w-3xl mx-auto w-full bg-white dark:bg-slate-800 p-6 sm:p-10 rounded-3xl shadow-xs border border-slate-200/80 dark:border-slate-700/80 mb-6">
-            
-            {/* Question Top Header */}
             <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100 dark:border-slate-700">
               <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 px-3 py-1 rounded-lg">
                 Question {currIdx + 1} / {totalQuestions}
               </span>
-              
               <button
                 type="button"
                 onClick={toggleMarkForReview}
@@ -362,14 +703,10 @@ export default function AttemptScreen() {
               </button>
             </div>
 
-            {/* Question Text */}
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">
-              {currentQ.questionText}
-            </h2>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">{currentQ.questionText}</h2>
 
-            {/* Options Grid */}
             <div className="space-y-3">
-              {['A', 'B', 'C', 'D'].map((opt) => {
+              {['A', 'B', 'C', 'D'].map(opt => {
                 const isSelected = answers[currentQ._id]?.option === opt;
                 return (
                   <button
@@ -377,105 +714,52 @@ export default function AttemptScreen() {
                     type="button"
                     onClick={() => handleOptionSelect(opt)}
                     className={`w-full text-left p-4 rounded-2xl border font-medium text-sm sm:text-base flex items-center justify-between transition-all group ${
-                      isSelected 
-                        ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 text-blue-950 dark:text-blue-100 font-semibold' 
+                      isSelected
+                        ? 'bg-blue-50/90 dark:bg-blue-950/80 border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30 text-blue-950 dark:text-blue-100 font-semibold'
                         : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/60 border-slate-200/90 dark:border-slate-700 text-slate-800 dark:text-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3.5 min-w-0 pr-4">
-                      <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
-                        isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-600'
-                      }`}>
-                        {opt}
-                      </span>
+                      <span className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-600'}`}>{opt}</span>
                       <span className="break-words">{currentQ[`option${opt}`]}</span>
                     </div>
-
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                      isSelected ? 'border-blue-600 dark:border-blue-400 bg-blue-600 dark:bg-blue-400 text-white' : 'border-slate-300 dark:border-slate-600'
-                    }`}>
-                      {isSelected && (
-                        <div className="w-2 h-2 rounded-full bg-white dark:bg-slate-900" />
-                      )}
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'border-blue-600 dark:border-blue-400 bg-blue-600 dark:bg-blue-400 text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-white dark:bg-slate-900" />}
                     </div>
                   </button>
                 );
               })}
             </div>
-
-            {/* Keyboard shortcut tip */}
             <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mt-6 text-right hidden sm:block">
-              Tip: Press keys <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">1-4</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">A-D</kbd> to select option
+              Tip: <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">1-4</kbd> or <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded text-slate-600 dark:text-slate-300">A-D</kbd> to select option
             </p>
-
           </div>
 
-          {/* Bottom Controls Bar */}
           <div className="max-w-3xl mx-auto w-full flex items-center justify-between gap-4">
-            <button 
-              disabled={currIdx === 0} 
-              onClick={() => setCurrIdx(prev => prev - 1)}
-              className="px-6 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm disabled:opacity-40 transition-colors"
-            >
-              ← Previous
-            </button>
-
+            <button disabled={currIdx === 0} onClick={() => setCurrIdx(p => p - 1)} className="px-6 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-sm disabled:opacity-40 transition-colors">← Previous</button>
             {currIdx === totalQuestions - 1 ? (
-              <button 
-                onClick={() => setShowSubmitModal(true)} 
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-emerald-600/20 transition-all"
-              >
-                Submit Test
-              </button>
+              <button onClick={() => setShowSubmitModal(true)} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-emerald-600/20 transition-all">Submit Test</button>
             ) : (
-              <button 
-                onClick={() => setCurrIdx(prev => prev + 1)} 
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-blue-600/20 transition-all"
-              >
-                Next →
-              </button>
+              <button onClick={() => setCurrIdx(p => p + 1)} className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold rounded-xl text-sm shadow-md shadow-blue-600/20 transition-all">Next →</button>
             )}
           </div>
-
         </div>
       </div>
 
-      {/* Final Submission Confirmation Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
           <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full border border-slate-100 dark:border-slate-700 animate-in zoom-in-95 duration-150">
             <h3 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2">Submit Practice Test?</h3>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">
-              Are you sure you want to conclude and submit your test? Here is your summary:
-            </p>
-
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 leading-relaxed">Are you sure you want to conclude and submit?</p>
             <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 mb-6 space-y-2 text-xs font-semibold">
-              <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                <span>Total Questions:</span>
-                <span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span>
-              </div>
-              <div className="flex justify-between text-emerald-700 dark:text-emerald-400">
-                <span>Answered:</span>
-                <span className="font-bold">{answeredCount}</span>
-              </div>
-              <div className="flex justify-between text-amber-800 dark:text-amber-300">
-                <span>Marked for Review:</span>
-                <span className="font-bold">{markedCount}</span>
-              </div>
-              <div className="flex justify-between text-slate-500 dark:text-slate-400">
-                <span>Unanswered:</span>
-                <span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span>
-              </div>
+              <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Total Questions:</span><span className="font-bold text-slate-900 dark:text-white">{totalQuestions}</span></div>
+              <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>Answered:</span><span className="font-bold">{answeredCount}</span></div>
+              <div className="flex justify-between text-amber-800 dark:text-amber-300"><span>Marked for Review:</span><span className="font-bold">{markedCount}</span></div>
+              <div className="flex justify-between text-slate-500 dark:text-slate-400"><span>Unanswered:</span><span className="font-bold text-slate-900 dark:text-white">{unansweredCount}</span></div>
             </div>
-
             <div className="flex items-center justify-end gap-3">
-              <button 
-                onClick={() => setShowSubmitModal(false)}
-                className="px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
-              >
-                Continue Test
-              </button>
-              <button 
+              <button onClick={() => setShowSubmitModal(false)} className="px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">Continue Test</button>
+              <button
                 onClick={async () => {
                   setShowSubmitModal(false);
                   await saveProgress(true);
@@ -490,7 +774,6 @@ export default function AttemptScreen() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
