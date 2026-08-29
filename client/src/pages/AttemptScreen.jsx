@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import API from "../api/axios";
-import { seededShuffle } from "../utils/shuffle";
 import toast from "react-hot-toast";
 
 export default function AttemptScreen() {
@@ -70,15 +69,10 @@ export default function AttemptScreen() {
         let questions = qsData.questions || [];
 
         if (a.mockMode) {
-          // Preserve section order from sectionTimers, then shuffle within each section
+          // Preserve section order from sectionTimers (ponytail: keep consecutive question order within sections)
           const order = (a.sectionTimers || []).map(t => t.section);
           setSectionOrder(order);
-          // Shuffle each section's questions independently using attemptId+section as seed
-          const shuffled = order.flatMap(sec => {
-            const secQs = questions.filter(q => q.section === sec);
-            return seededShuffle(secQs, id + sec);
-          });
-          qsData.questions = shuffled;
+          qsData.questions = order.flatMap(sec => questions.filter(q => q.section === sec));
 
           if (a.freeNav) {
             // Seed all section timers simultaneously
@@ -91,9 +85,9 @@ export default function AttemptScreen() {
             if (firstTimer) setSectionTimeLeft(firstTimer.durationSec);
           }
         } else {
-          // Single mode: filter + shuffle
+          // Single mode: filter by section if set, maintain original question order
           if (a.section) questions = questions.filter(q => q.section === a.section);
-          qsData.questions = seededShuffle(questions, id);
+          qsData.questions = questions;
         }
 
         setQs(qsData);
@@ -270,7 +264,7 @@ export default function AttemptScreen() {
 
   // ── FREE-NAV MODE render ──
   if (attempt.mockMode && attempt.freeNav) {
-    const allQuestions = qs.questions; // already shuffled per-section and ordered by sectionOrder
+    const allQuestions = qs.questions; // ordered by sectionOrder while preserving question sequence
     const currentQ = allQuestions[freeNavCurrIdx];
     const currentQSection = currentQ?.section || '';
     const isSectionLocked = (sec) => (freeNavTimers[sec] ?? 1) <= 0;
