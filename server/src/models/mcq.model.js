@@ -14,6 +14,8 @@ const questionSetSchema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     name: { type: String, required: true },
     category: { type: String, default: 'General' },
+    defaultDurationMin: { type: Number, default: 15 },
+    defaultSectionDurationsMin: { type: Map, of: Number, default: {} },
     questions: [questionSchema]
 }, { timestamps: true });
 
@@ -36,6 +38,7 @@ const attemptSchema = new Schema({
     questionSetId: { type: Schema.Types.ObjectId, ref: "QuestionSet", required: true },
     section: { type: String, default: '' },
     mockMode: { type: Boolean, default: false },
+    freeNav: { type: Boolean, default: false },  // free navigation: all questions open, section timers run in parallel
     sectionTimers: [sectionTimerSchema],   // per-section durations when mockMode=true
     timerDurationSec: { type: Number, required: true },
     totalQuestions: { type: Number, required: true },

@@ -4,7 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { QuestionSet, Attempt } from "../models/mcq.model.js";
 
 export const createQuestionSet = asyncHandler(async (req, res) => {
-    const { name, category, questions } = req.body;
+    const { name, category, defaultDurationMin, defaultSectionDurationsMin, questions } = req.body;
     if (!name || !questions || !questions.length) {
         throw new ApiError(400, "Name and questions are required");
     }
@@ -13,6 +13,8 @@ export const createQuestionSet = asyncHandler(async (req, res) => {
         userId: req.user._id,
         name,
         category: category || 'General',
+        defaultDurationMin: defaultDurationMin || 15,
+        defaultSectionDurationsMin: defaultSectionDurationsMin || {},
         questions
     });
 
@@ -35,13 +37,14 @@ export const getQuestionSetById = asyncHandler(async (req, res) => {
 });
 
 export const startAttempt = asyncHandler(async (req, res) => {
-    const { questionSetId, section, mockMode, sectionTimers, timerDurationSec, totalQuestions } = req.body;
+    const { questionSetId, section, mockMode, freeNav, sectionTimers, timerDurationSec, totalQuestions } = req.body;
 
     const attempt = await Attempt.create({
         userId: req.user._id,
         questionSetId,
         section: section || '',
         mockMode: !!mockMode,
+        freeNav: !!freeNav,
         sectionTimers: sectionTimers || [],
         timerDurationSec,
         totalQuestions,
@@ -67,10 +70,10 @@ export const updateAttempt = asyncHandler(async (req, res) => {
 });
 
 export const updateQuestionSet = asyncHandler(async (req, res) => {
-    const { name, category, questions } = req.body;
+    const { name, category, defaultDurationMin, defaultSectionDurationsMin, questions } = req.body;
     const questionSet = await QuestionSet.findOneAndUpdate(
         { _id: req.params.id, userId: req.user._id },
-        { name, category, questions },
+        { name, category, defaultDurationMin, defaultSectionDurationsMin, questions },
         { new: true }
     );
     if (!questionSet) throw new ApiError(404, "Question set not found or you do not have permission");

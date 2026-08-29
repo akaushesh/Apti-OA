@@ -60,6 +60,8 @@ export default function TestConfig() {
   const [globalDuration, setGlobalDuration] = useState(60);
   // {[section]: durationMinutes}
   const [perSectionDurations, setPerSectionDurations] = useState({});
+  // freeNav: all questions open simultaneously, section timers run in parallel and lock independently
+  const [freeNav, setFreeNav] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -67,11 +69,20 @@ export default function TestConfig() {
       .then(res => {
         const data = res.data.data;
         setQs(data);
-        // Init per-section durations
+        // Seed timer defaults from uploader's intended durations
+        const def = data.defaultDurationMin || 15;
+        setSingleDuration(def);
+        // Init per-section durations — use per-section default if set, else global default
         const secs = [...new Set((data.questions || []).map(q => q.section).filter(Boolean))].sort();
+        const secDefaults = data.defaultSectionDurationsMin || {};
         const init = {};
-        secs.forEach(s => { init[s] = 15; });
+        secs.forEach(s => { init[s] = secDefaults[s] ?? def; });
         setPerSectionDurations(init);
+        // Global mock duration = sum of per-section defaults
+        const totalMock = secs.length > 0
+          ? secs.reduce((acc, s) => acc + (secDefaults[s] ?? def), 0)
+          : def;
+        setGlobalDuration(totalMock);
       })
       .catch(err => {
         const msg = err.response?.data?.message || "Question set not found";
@@ -130,6 +141,7 @@ export default function TestConfig() {
           questionSetId: id,
           section: '',
           mockMode: true,
+          freeNav: timerMode === "per-section" && freeNav,
           sectionTimers,
           timerDurationSec: totalSec,
           totalQuestions: qs.questions.length,
@@ -350,6 +362,40 @@ export default function TestConfig() {
               </div>
             )}
 
+            {/* Free Nav toggle — only makes sense with per-section timers */}
+            {timerMode === "per-section" && (
+              <div className="mb-5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Navigation Style</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFreeNav(false)}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-left ${
+                      !freeNav ? "bg-violet-600 text-white border-violet-600" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600"
+                    }`}
+                  >
+                    <div>Sequential</div>
+                    <div className={`text-[10px] mt-0.5 ${!freeNav ? "text-violet-200" : "text-slate-400"}`}>Submit section to unlock next</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFreeNav(true)}
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-left ${
+                      freeNav ? "bg-violet-600 text-white border-violet-600" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600"
+                    }`}
+                  >
+                    <div>Free Navigation</div>
+                    <div className={`text-[10px] mt-0.5 ${freeNav ? "text-violet-200" : "text-slate-400"}`}>All sections open, timers run in parallel</div>
+                  </button>
+                </div>
+                {freeNav && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-2 flex items-center gap-1">
+                    <span>⚠</span> When a section&apos;s timer expires, its questions lock — you can&apos;t borrow unused time from another section.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Section overview */}
             <div className="mb-6 bg-violet-50 dark:bg-violet-950/30 rounded-2xl p-4 border border-violet-200/60 dark:border-violet-800/40">
               <p className="text-[11px] font-extrabold uppercase tracking-wider text-violet-600 dark:text-violet-400 mb-2">Mock Test Flow</p>
@@ -359,12 +405,14 @@ export default function TestConfig() {
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-violet-100 dark:bg-violet-900/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
                       {i + 1}. {sec}
                     </span>
-                    {i < sections.length - 1 && <span className="text-slate-400 dark:text-slate-600">→</span>}
+                    {i < sections.length - 1 && <span className="text-slate-400 dark:text-slate-600">{freeNav && timerMode === "per-section" ? "||" : "→"}</span>}
                   </div>
                 ))}
               </div>
               <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">
-                Each section must be submitted before the next unlocks.
+                {freeNav && timerMode === "per-section"
+                  ? "All sections open simultaneously. Each section has its own independent countdown — time cannot be shared."
+                  : "Each section must be submitted before the next unlocks."}
               </p>
             </div>
           </>

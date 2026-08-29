@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import API from "../api/axios";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -33,9 +33,14 @@ const SAMPLE_JSON = `[
   }
 ]`;
 
+const PRESETS = [5, 10, 15, 20, 30, 45];
+
 export default function BulkUpload() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("General");
+  const [defaultDurationMin, setDefaultDurationMin] = useState(15);
+  // {[section]: minutes} — per-section timer defaults for mock mode
+  const [sectionDurationsMin, setSectionDurationsMin] = useState({});
   const [text, setText] = useState(SAMPLE_JSON);
   const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
@@ -76,6 +81,15 @@ export default function BulkUpload() {
     }
   }, [text]);
 
+  // Sync sectionDurationsMin when sections change — preserve existing values, seed new ones from defaultDurationMin
+  useEffect(() => {
+    setSectionDurationsMin(prev => {
+      const next = {};
+      parseResult.sections.forEach(s => { next[s] = prev[s] ?? defaultDurationMin; });
+      return next;
+    });
+  }, [parseResult.sections.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleUpload = async () => {
     if (!name.trim()) return toast.error("Please enter a Question Set Name");
     if (!parseResult.valid) return toast.error(parseResult.error || "Invalid JSON structure");
@@ -85,6 +99,8 @@ export default function BulkUpload() {
       await API.post("/mcq/question-sets", { 
         name: name.trim(),
         category: category.trim() || "General",
+        defaultDurationMin,
+        defaultSectionDurationsMin: sectionDurationsMin,
         questions: parseResult.questions 
       });
       toast.success(`Question set "${name}" uploaded successfully!`);
@@ -158,6 +174,41 @@ export default function BulkUpload() {
               />
             </div>
 
+            {/* Default Timer Duration */}
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Default Timer Duration
+                <span className="ml-2 normal-case font-semibold text-slate-400">used as default in TestConfig</span>
+              </label>
+              <div className="grid grid-cols-6 gap-1.5 mb-2">
+                {PRESETS.map(p => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setDefaultDurationMin(p)}
+                    className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                      defaultDurationMin === p
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                    }`}
+                  >
+                    {p}m
+                  </button>
+                ))}
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="180"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 text-slate-900 dark:text-white p-2.5 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                  value={defaultDurationMin}
+                  onChange={e => setDefaultDurationMin(Math.max(1, Number(e.target.value)))}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">min</span>
+              </div>
+            </div>
+
             {/* Validation Banner */}
             <div className={`p-3.5 rounded-2xl mb-4 border text-xs font-semibold flex items-center justify-between transition-all ${
               parseResult.valid 
@@ -181,16 +232,125 @@ export default function BulkUpload() {
               </button>
             </div>
 
-            {/* Section chips */}
-            {parseResult.valid && parseResult.sections.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-4">
-                {parseResult.sections.map(sec => (
-                  <span key={sec} className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
-                    {sec} · {parseResult.questions.filter(q => (q.section || '') === sec).length}q
-                  </span>
-                ))}
+            {/* Timer Defaults */}
+            <div className="mb-5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  Default Timer
+                  <span className="ml-2 normal-case font-semibold text-slate-400">pre-fills TestConfig</span>
+                </label>
               </div>
-            )}
+
+              {parseResult.valid && parseResult.sections.length > 0 ? (
+                // Per-section rows when sections exist
+                <div className="space-y-2.5">
+                  {parseResult.sections.map(sec => {
+                    const qCount = parseResult.questions.filter(q => (q.section || '') === sec).length;
+                    const val = sectionDurationsMin[sec] ?? defaultDurationMin;
+                    return (
+                      <div key={sec} className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 truncate">
+                            {sec}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 shrink-0">{qCount}q</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {[5, 10, 15, 20, 30].map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setSectionDurationsMin(prev => ({ ...prev, [sec]: p }))}
+                              className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-all ${
+                                val === p
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
+                              }`}
+                            >
+                              {p}m
+                            </button>
+                          ))}
+                          <div className="relative ml-1">
+                            <input
+                              type="number"
+                              min="1"
+                              max="180"
+                              className="w-14 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-1 pr-5 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-blue-500/20"
+                              value={val}
+                              onChange={e => setSectionDurationsMin(prev => ({ ...prev, [sec]: Math.max(1, Number(e.target.value)) }))}
+                            />
+                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">m</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Single-section default</span>
+                      <div className="flex items-center gap-1 ml-auto">
+                        {PRESETS.map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setDefaultDurationMin(p)}
+                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-all ${
+                              defaultDurationMin === p
+                                ? "bg-violet-600 text-white"
+                                : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
+                            }`}
+                          >
+                            {p}m
+                          </button>
+                        ))}
+                        <div className="relative ml-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="180"
+                            className="w-14 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-1 pr-5 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-blue-500/20"
+                            value={defaultDurationMin}
+                            onChange={e => setDefaultDurationMin(Math.max(1, Number(e.target.value)))}
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">m</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Single global picker when no sections
+                <>
+                  <div className="grid grid-cols-6 gap-1.5 mb-2">
+                    {PRESETS.map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setDefaultDurationMin(p)}
+                        className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                          defaultDurationMin === p
+                            ? "bg-blue-600 text-white"
+                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600"
+                        }`}
+                      >
+                        {p}m
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      max="180"
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-2.5 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                      value={defaultDurationMin}
+                      onChange={e => setDefaultDurationMin(Math.max(1, Number(e.target.value)))}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">min</span>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* JSON Code Input Textarea */}
             <div className="mb-4">
@@ -198,7 +358,7 @@ export default function BulkUpload() {
                 JSON Questions Array
               </label>
               <textarea 
-                className="w-full bg-slate-900 text-emerald-400 p-4 rounded-2xl h-80 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/40 custom-scrollbar-hide leading-relaxed" 
+                className="w-full bg-slate-900 text-emerald-400 p-4 rounded-2xl h-64 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/40 custom-scrollbar-hide leading-relaxed" 
                 value={text} 
                 onChange={e => setText(e.target.value)}
                 placeholder='[ { "section": "...", "questionText": "...", "optionA": "...", "correctAnswer": "A" } ]'

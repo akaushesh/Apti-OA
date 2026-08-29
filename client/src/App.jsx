@@ -67,7 +67,7 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 selection:bg-blue-500 selection:text-white transition-colors duration-200">
       <Toaster 
-        position="top-right" 
+        position="top-left" 
         toastOptions={{
           duration: 3500,
           style: {

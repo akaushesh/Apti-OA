@@ -3,10 +3,14 @@ import API from "../api/axios";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
+const PRESETS = [5, 10, 15, 20, 30, 45];
+
 export default function EditSet() {
   const { id } = useParams();
   const [name, setName] = useState("");
   const [category, setCategory] = useState("General");
+  const [defaultDurationMin, setDefaultDurationMin] = useState(15);
+  const [sectionDurationsMin, setSectionDurationsMin] = useState({});
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,6 +24,10 @@ export default function EditSet() {
         const set = res.data.data;
         setName(set.name);
         setCategory(set.category || "General");
+        setDefaultDurationMin(set.defaultDurationMin || 15);
+        setSectionDurationsMin(set.defaultSectionDurationsMin
+          ? Object.fromEntries(Object.entries(set.defaultSectionDurationsMin))
+          : {});
         
         const cleanQuestions = set.questions.map(q => {
           const { _id, ...rest } = q;
@@ -36,14 +44,14 @@ export default function EditSet() {
   }, [id, navigate]);
 
   const parseResult = useMemo(() => {
-    if (!text.trim()) return { valid: false, error: "JSON input is empty", questions: [] };
+    if (!text.trim()) return { valid: false, error: "JSON input is empty", questions: [], sections: [] };
     try {
       const parsed = JSON.parse(text);
       if (!Array.isArray(parsed)) {
-        return { valid: false, error: "Root element must be a JSON array [ ... ]", questions: [] };
+        return { valid: false, error: "Root element must be a JSON array [ ... ]", questions: [], sections: [] };
       }
       if (parsed.length === 0) {
-        return { valid: false, error: "JSON array contains no questions", questions: [] };
+        return { valid: false, error: "JSON array contains no questions", questions: [], sections: [] };
       }
 
       for (let i = 0; i < parsed.length; i++) {
@@ -52,23 +60,33 @@ export default function EditSet() {
           return { 
             valid: false, 
             error: `Item #${i + 1} is missing required fields (questionText, optionA-D, correctAnswer)`, 
-            questions: [] 
+            questions: [], sections: []
           };
         }
         if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer?.toUpperCase())) {
           return {
             valid: false,
             error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be 'A', 'B', 'C', or 'D'`,
-            questions: []
+            questions: [], sections: []
           };
         }
       }
 
-      return { valid: true, error: null, questions: parsed };
+      const sections = [...new Set(parsed.map(q => q.section || '').filter(Boolean))];
+      return { valid: true, error: null, questions: parsed, sections };
     } catch(err) {
-      return { valid: false, error: `Syntax Error: ${err.message}`, questions: [] };
+      return { valid: false, error: `Syntax Error: ${err.message}`, questions: [], sections: [] };
     }
   }, [text]);
+
+  // Sync sectionDurationsMin when sections change — preserve existing edits, seed new from default
+  useEffect(() => {
+    setSectionDurationsMin(prev => {
+      const next = {};
+      parseResult.sections.forEach(s => { next[s] = prev[s] ?? defaultDurationMin; });
+      return next;
+    });
+  }, [parseResult.sections.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUpdate = async () => {
     if (!name.trim()) {
@@ -83,6 +101,8 @@ export default function EditSet() {
       await API.put(`/mcq/question-sets/${id}`, { 
         name: name.trim(),
         category: category.trim() || "General",
+        defaultDurationMin,
+        defaultSectionDurationsMin: sectionDurationsMin,
         questions: parseResult.questions 
       });
       toast.success("Question set updated successfully!");
@@ -203,8 +223,124 @@ export default function EditSet() {
             }`}>
               <div className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${parseResult.valid ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                <span>{parseResult.valid ? `Valid Format — ${parseResult.questions.length} questions detected` : parseResult.error}</span>
+                <span>{parseResult.valid ? `Valid Format — ${parseResult.questions.length} questions detected${parseResult.sections.length > 0 ? `, ${parseResult.sections.length} section${parseResult.sections.length > 1 ? 's' : ''}` : ''}` : parseResult.error}</span>
               </div>
+            </div>
+
+            {/* Timer Defaults */}
+            <div className="mb-5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-3">
+                Default Timer
+                <span className="ml-2 normal-case font-semibold text-slate-400">pre-fills TestConfig</span>
+              </label>
+
+              {parseResult.valid && parseResult.sections.length > 0 ? (
+                <div className="space-y-2.5">
+                  {parseResult.sections.map(sec => {
+                    const qCount = parseResult.questions.filter(q => (q.section || '') === sec).length;
+                    const val = sectionDurationsMin[sec] ?? defaultDurationMin;
+                    return (
+                      <div key={sec} className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 truncate">
+                            {sec}
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 shrink-0">{qCount}q</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {[5, 10, 15, 20, 30].map(p => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setSectionDurationsMin(prev => ({ ...prev, [sec]: p }))}
+                              className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-all ${
+                                val === p
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
+                              }`}
+                            >
+                              {p}m
+                            </button>
+                          ))}
+                          <div className="relative ml-1">
+                            <input
+                              type="number"
+                              min="1"
+                              max="180"
+                              className="w-14 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-1 pr-5 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-blue-500/20"
+                              value={val}
+                              onChange={e => setSectionDurationsMin(prev => ({ ...prev, [sec]: Math.max(1, Number(e.target.value)) }))}
+                            />
+                            <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">m</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Single-section default</span>
+                      <div className="flex items-center gap-1 ml-auto">
+                        {PRESETS.map(p => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setDefaultDurationMin(p)}
+                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-all ${
+                              defaultDurationMin === p
+                                ? "bg-violet-600 text-white"
+                                : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600"
+                            }`}
+                          >
+                            {p}m
+                          </button>
+                        ))}
+                        <div className="relative ml-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="180"
+                            className="w-14 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-1 pr-5 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-blue-500/20"
+                            value={defaultDurationMin}
+                            onChange={e => setDefaultDurationMin(Math.max(1, Number(e.target.value)))}
+                          />
+                          <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">m</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-6 gap-1.5 mb-2">
+                    {PRESETS.map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setDefaultDurationMin(p)}
+                        className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
+                          defaultDurationMin === p
+                            ? "bg-blue-600 text-white"
+                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600"
+                        }`}
+                      >
+                        {p}m
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      max="180"
+                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 focus:border-blue-500 text-slate-900 dark:text-white p-2.5 rounded-xl text-sm font-semibold transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+                      value={defaultDurationMin}
+                      onChange={e => setDefaultDurationMin(Math.max(1, Number(e.target.value)))}
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">min</span>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mb-4">
