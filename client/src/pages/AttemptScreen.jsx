@@ -41,13 +41,16 @@ export default function AttemptScreen() {
         setAnswers(savedAns);
 
         const setId = a.questionSetId?._id || a.questionSetId;
-        return API.get(`/mcq/question-sets/${setId}`);
+        return API.get(`/mcq/question-sets/${setId}`).then(res2 => ({ res2, a }));
       })
-      .then(res2 => {
+      .then(({ res2, a }) => {
         const qsData = res2.data.data;
-        if (qsData.questions) {
-          qsData.questions = seededShuffle(qsData.questions, id);
+        // Filter to section if one was chosen, then shuffle within-session using attemptId as seed
+        let questions = qsData.questions || [];
+        if (a.section) {
+          questions = questions.filter(q => q.section === a.section);
         }
+        qsData.questions = seededShuffle(questions, id);
         setQs(qsData);
       })
       .catch(err => {
@@ -187,7 +190,7 @@ export default function AttemptScreen() {
               {qs.name}
             </h1>
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Question {currIdx + 1} of {totalQuestions}
+              {attempt.section ? `${attempt.section} · ` : ""}Question {currIdx + 1} of {totalQuestions}
             </span>
           </div>
         </div>

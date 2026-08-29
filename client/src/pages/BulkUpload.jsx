@@ -5,6 +5,16 @@ import toast from "react-hot-toast";
 
 const SAMPLE_JSON = `[
   {
+    "section": "Technical MCQs",
+    "questionText": "An operating system uses a scheduling algorithm where the process with the smallest estimated CPU burst time is always selected to run next, which can cause a process with a long burst time to wait indefinitely if shorter jobs keep arriving. Which scheduling algorithm and associated problem does this describe?",
+    "optionA": "Round Robin; context-switch overhead",
+    "optionB": "First-Come-First-Served; convoy effect",
+    "optionC": "Shortest Job First; starvation",
+    "optionD": "Priority Scheduling; deadlock",
+    "correctAnswer": "C"
+  },
+  {
+    "section": "Technical MCQs",
     "questionText": "What is the primary advantage of indexing in database systems?",
     "optionA": "Reduces disk space required",
     "optionB": "Speeds up data retrieval operations",
@@ -13,12 +23,13 @@ const SAMPLE_JSON = `[
     "correctAnswer": "B"
   },
   {
+    "section": "Aptitude",
     "questionText": "Which data structure uses LIFO (Last In, First Out) ordering?",
     "optionA": "Queue",
-    "optionB": "Stack",
-    "optionC": "Binary Search Tree",
-    "optionD": "Linked List",
-    "correctAnswer": "B"
+    "optionB": "Binary Search Tree",
+    "optionC": "Linked List",
+    "optionD": "Stack",
+    "correctAnswer": "D"
   }
 ]`;
 
@@ -29,16 +40,15 @@ export default function BulkUpload() {
   const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
 
-  // Validate JSON real-time
   const parseResult = useMemo(() => {
-    if (!text.trim()) return { valid: false, error: "JSON input is empty", questions: [] };
+    if (!text.trim()) return { valid: false, error: "JSON input is empty", questions: [], sections: [] };
     try {
       const parsed = JSON.parse(text);
       if (!Array.isArray(parsed)) {
-        return { valid: false, error: "Root element must be a JSON array [ ... ]", questions: [] };
+        return { valid: false, error: "Root element must be a JSON array [ ... ]", questions: [], sections: [] };
       }
       if (parsed.length === 0) {
-        return { valid: false, error: "JSON array contains no questions", questions: [] };
+        return { valid: false, error: "JSON array contains no questions", questions: [], sections: [] };
       }
 
       for (let i = 0; i < parsed.length; i++) {
@@ -47,31 +57,28 @@ export default function BulkUpload() {
           return { 
             valid: false, 
             error: `Item #${i + 1} is missing required fields (questionText, optionA-D, correctAnswer)`, 
-            questions: [] 
+            questions: [], sections: [] 
           };
         }
         if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer?.toUpperCase())) {
           return {
             valid: false,
-            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be 'A', 'B', 'C', or 'D'`,
-            questions: []
+            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be A, B, C, or D`,
+            questions: [], sections: []
           };
         }
       }
 
-      return { valid: true, error: null, questions: parsed };
+      const sections = [...new Set(parsed.map(q => q.section || '').filter(Boolean))];
+      return { valid: true, error: null, questions: parsed, sections };
     } catch(err) {
-      return { valid: false, error: `Syntax Error: ${err.message}`, questions: [] };
+      return { valid: false, error: `Syntax Error: ${err.message}`, questions: [], sections: [] };
     }
   }, [text]);
 
   const handleUpload = async () => {
-    if (!name.trim()) {
-      return toast.error("Please enter a Question Set Name");
-    }
-    if (!parseResult.valid) {
-      return toast.error(parseResult.error || "Invalid JSON structure");
-    }
+    if (!name.trim()) return toast.error("Please enter a Question Set Name");
+    if (!parseResult.valid) return toast.error(parseResult.error || "Invalid JSON structure");
 
     setUploading(true);
     try {
@@ -83,12 +90,23 @@ export default function BulkUpload() {
       toast.success(`Question set "${name}" uploaded successfully!`);
       navigate("/");
     } catch(err) {
-      console.error(err);
       toast.error(err.response?.data?.message || "Failed to upload question set");
     } finally {
       setUploading(false);
     }
   };
+
+  // Group questions by section for the preview
+  const grouped = useMemo(() => {
+    if (!parseResult.valid) return [];
+    const map = new Map();
+    parseResult.questions.forEach((q, idx) => {
+      const sec = q.section || '';
+      if (!map.has(sec)) map.set(sec, []);
+      map.get(sec).push({ q, idx });
+    });
+    return [...map.entries()]; // [[section, [{q, idx}]], ...]
+  }, [parseResult]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -148,7 +166,11 @@ export default function BulkUpload() {
             }`}>
               <div className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${parseResult.valid ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                <span>{parseResult.valid ? `Valid Format — ${parseResult.questions.length} questions detected` : parseResult.error}</span>
+                <span>
+                  {parseResult.valid 
+                    ? `Valid — ${parseResult.questions.length} questions${parseResult.sections.length > 0 ? `, ${parseResult.sections.length} section${parseResult.sections.length > 1 ? 's' : ''}` : ''}`
+                    : parseResult.error}
+                </span>
               </div>
               <button
                 type="button"
@@ -159,6 +181,17 @@ export default function BulkUpload() {
               </button>
             </div>
 
+            {/* Section chips */}
+            {parseResult.valid && parseResult.sections.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {parseResult.sections.map(sec => (
+                  <span key={sec} className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+                    {sec} · {parseResult.questions.filter(q => (q.section || '') === sec).length}q
+                  </span>
+                ))}
+              </div>
+            )}
+
             {/* JSON Code Input Textarea */}
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
@@ -168,7 +201,7 @@ export default function BulkUpload() {
                 className="w-full bg-slate-900 text-emerald-400 p-4 rounded-2xl h-80 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/40 custom-scrollbar-hide leading-relaxed" 
                 value={text} 
                 onChange={e => setText(e.target.value)}
-                placeholder='[ { "questionText": "...", "optionA": "...", "correctAnswer": "A" } ]'
+                placeholder='[ { "section": "...", "questionText": "...", "optionA": "...", "correctAnswer": "A" } ]'
               />
             </div>
           </div>
@@ -211,33 +244,48 @@ export default function BulkUpload() {
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{parseResult.error}</p>
             </div>
           ) : (
-            <div className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
-              {parseResult.questions.map((q, idx) => (
-                <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md">
-                      Question {idx + 1}
-                    </span>
-                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/50">
-                      Answer: Option {q.correctAnswer}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3">{q.questionText}</h4>
-                  
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {['A', 'B', 'C', 'D'].map(opt => {
-                      const isCorrect = q.correctAnswer?.toUpperCase() === opt;
-                      return (
-                        <div 
-                          key={opt} 
-                          className={`p-2.5 rounded-xl border font-medium flex items-center justify-between ${
-                            isCorrect ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100 font-bold' : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <span className="truncate"><strong className="mr-1.5 opacity-60">{opt}.</strong> {q[`option${opt}`]}</span>
+            <div className="space-y-6 max-h-[550px] overflow-y-auto pr-1">
+              {grouped.map(([section, items]) => (
+                <div key={section}>
+                  {/* Section header — skip if all questions have no section */}
+                  {section && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                        {section}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">{items.length} questions</span>
+                    </div>
+                  )}
+                  <div className="space-y-4">
+                    {items.map(({ q, idx }) => (
+                      <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md">
+                            Q{idx + 1}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/50">
+                            Answer: {q.correctAnswer}
+                          </span>
                         </div>
-                      );
-                    })}
+                        <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3">{q.questionText}</h4>
+                        
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {['A', 'B', 'C', 'D'].map(opt => {
+                            const isCorrect = q.correctAnswer?.toUpperCase() === opt;
+                            return (
+                              <div 
+                                key={opt} 
+                                className={`p-2.5 rounded-xl border font-medium flex items-center justify-between ${
+                                  isCorrect ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100 font-bold' : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                <span className="truncate"><strong className="mr-1.5 opacity-60">{opt}.</strong> {q[`option${opt}`]}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

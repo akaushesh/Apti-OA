@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import API from "../api/axios";
 import toast from "react-hot-toast";
@@ -8,6 +8,7 @@ export default function TestConfig() {
   const navigate = useNavigate();
   const [qs, setQs] = useState(null);
   const [duration, setDuration] = useState(15);
+  const [selectedSection, setSelectedSection] = useState(""); // "" = all
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -15,11 +16,8 @@ export default function TestConfig() {
   useEffect(() => {
     setLoading(true);
     API.get(`/mcq/question-sets/${id}`)
-      .then(res => {
-        setQs(res.data.data);
-      })
+      .then(res => setQs(res.data.data))
       .catch(err => {
-        console.error(err);
         const msg = err.response?.data?.message || "Question set not found";
         setErrorMsg(msg);
         toast.error(msg);
@@ -27,25 +25,35 @@ export default function TestConfig() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // Derive unique, non-empty sections from questions
+  const sections = useMemo(() => {
+    if (!qs?.questions) return [];
+    const s = [...new Set(qs.questions.map(q => q.section).filter(Boolean))];
+    return s.sort();
+  }, [qs]);
+
+  const filteredCount = useMemo(() => {
+    if (!qs?.questions) return 0;
+    if (!selectedSection) return qs.questions.length;
+    return qs.questions.filter(q => q.section === selectedSection).length;
+  }, [qs, selectedSection]);
+
   const handleStart = async () => {
-    if (!qs || !qs.questions?.length) {
-      return toast.error("Question set contains no questions");
-    }
-    if (duration <= 0) {
-      return toast.error("Please enter a valid test duration");
-    }
+    if (!qs || !qs.questions?.length) return toast.error("Question set contains no questions");
+    if (filteredCount === 0) return toast.error("No questions found in this section");
+    if (duration <= 0) return toast.error("Please enter a valid test duration");
 
     setStarting(true);
     try {
       const res = await API.post("/mcq/attempts", {
         questionSetId: id,
+        section: selectedSection,
         timerDurationSec: Math.round(duration * 60),
-        totalQuestions: qs.questions.length
+        totalQuestions: filteredCount,
       });
       toast.success("Practice test started!");
       navigate(`/attempt/${res.data.data._id}`);
     } catch(err) {
-      console.error(err);
       toast.error(err.response?.data?.message || "Failed to initialize test attempt");
       setStarting(false);
     }
@@ -77,9 +85,7 @@ export default function TestConfig() {
     );
   }
 
-  const numQuestions = qs.questions.length;
-  const timePerQuestion = (duration * 60 / numQuestions).toFixed(0);
-
+  const timePerQuestion = (duration * 60 / filteredCount).toFixed(0);
   const durationPresets = [5, 10, 15, 20, 30, 45];
 
   return (
@@ -95,7 +101,7 @@ export default function TestConfig() {
           </div>
           <div>
             <h1 className="text-xl font-extrabold text-slate-900 dark:text-white">Configure Practice Test</h1>
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">Set your timer preferences before starting</p>
+            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">Set your preferences before starting</p>
           </div>
         </div>
 
@@ -105,20 +111,57 @@ export default function TestConfig() {
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">{qs.name}</h2>
           <div className="flex items-center gap-3 mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
             <span className="bg-blue-100/80 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-2.5 py-0.5 rounded-md">
-              {numQuestions} Questions
+              {filteredCount} Questions
             </span>
             <span className="text-slate-400">•</span>
             <span>~{timePerQuestion}s per question</span>
           </div>
         </div>
 
+        {/* Section Picker — only shown if sections exist */}
+        {sections.length > 0 && (
+          <div className="mb-6">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+              Section
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedSection("")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all border ${
+                  selectedSection === ""
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                All Sections ({qs.questions.length})
+              </button>
+              {sections.map(sec => {
+                const count = qs.questions.filter(q => q.section === sec).length;
+                return (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => setSelectedSection(sec)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all border ${
+                      selectedSection === sec
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600"
+                    }`}
+                  >
+                    {sec} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Duration Selection */}
         <div className="mb-8">
           <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
             Timer Duration (Minutes)
           </label>
-          
-          {/* Preset Buttons */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
             {durationPresets.map(preset => (
               <button
@@ -135,7 +178,6 @@ export default function TestConfig() {
               </button>
             ))}
           </div>
-
           <div className="relative">
             <input 
               type="number" 
@@ -145,9 +187,7 @@ export default function TestConfig() {
               value={duration} 
               onChange={e => setDuration(Math.max(1, Number(e.target.value)))} 
             />
-            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
-              Minutes
-            </span>
+            <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Minutes</span>
           </div>
         </div>
 
@@ -172,7 +212,7 @@ export default function TestConfig() {
                 <span>Initializing...</span>
               </>
             ) : (
-              <span>Start Practice Test</span>
+              <span>Start Practice Test{selectedSection ? ` · ${selectedSection}` : ""}</span>
             )}
           </button>
         </div>

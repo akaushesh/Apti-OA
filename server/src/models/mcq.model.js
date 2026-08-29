@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 
 const questionSchema = new Schema({
+    section: { type: String, default: '' },
     questionText: { type: String, required: true },
     optionA: { type: String, required: true },
     optionB: { type: String, required: true },
@@ -28,6 +29,7 @@ const answerSchema = new Schema({
 const attemptSchema = new Schema({
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     questionSetId: { type: Schema.Types.ObjectId, ref: "QuestionSet", required: true },
+    section: { type: String, default: '' },
     timerDurationSec: { type: Number, required: true },
     totalQuestions: { type: Number, required: true },
     answers: [answerSchema],
