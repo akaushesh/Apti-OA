@@ -13,6 +13,7 @@ export default function AttemptScreen() {
 
   // ── shared state ──
   const [answers, setAnswers] = useState({});
+  const [timeSpentMap, setTimeSpentMap] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
   const [saving, setSaving] = useState(false);
   const [showMobileGrid, setShowMobileGrid] = useState(false);
@@ -52,12 +53,15 @@ export default function AttemptScreen() {
         setAttempt(a);
 
         const savedAns = {};
+        const savedTimes = {};
         if (a.answers) {
           a.answers.forEach(ans => {
             savedAns[ans.questionId] = { option: ans.selectedOption, isUntimed: ans.isUntimed || false };
+            if (ans.timeSpentSec) savedTimes[ans.questionId] = ans.timeSpentSec;
           });
         }
         setAnswers(savedAns);
+        setTimeSpentMap(savedTimes);
 
         if (!a.mockMode) setTimeLeft(a.timerDurationSec || 600);
 
@@ -148,15 +152,52 @@ export default function AttemptScreen() {
     ? qs.questions.filter(q => q.section === currentSectionName)
     : [];
 
+  const activeQ = attempt?.freeNav
+    ? qs?.questions[freeNavCurrIdx]
+    : attempt?.mockMode
+    ? currentSectionQuestions[mockCurrIdx]
+    : qs?.questions[currIdx];
+  const activeQuestionId = activeQ?._id;
+
+  // ── per-question time tracking ticker ──
+  useEffect(() => {
+    if (loading || timeUp || !activeQuestionId || showSubmitModal || showSectionSubmitModal) return;
+
+    if (attempt?.mockMode) {
+      if (attempt.freeNav) {
+        const sec = activeQ?.section;
+        if ((freeNavTimers[sec] ?? 1) <= 0) return;
+      } else {
+        if (sectionTimeLeft <= 0 || sectionTimeUp) return;
+      }
+    } else {
+      if (!untimedMode && timeLeft <= 0) return;
+    }
+
+    const t = setTimeout(() => {
+      setTimeSpentMap(prev => ({
+        ...prev,
+        [activeQuestionId]: (prev[activeQuestionId] || 0) + 1
+      }));
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [activeQuestionId, loading, timeUp, attempt, freeNavTimers, sectionTimeLeft, sectionTimeUp, untimedMode, timeLeft, activeQ, showSubmitModal, showSectionSubmitModal]);
+
   const saveProgress = async (isSubmit = false) => {
     if (!qs || !attempt) return;
     setSaving(true);
     let score = 0;
-    const ansArray = Object.keys(answers).map(qId => {
-      const q = qs.questions.find(x => x._id === qId);
-      const selected = answers[qId].option;
-      if (q && q.correctAnswer === selected) score++;
-      return { questionId: qId, selectedOption: selected, isUntimed: answers[qId].isUntimed };
+    const ansArray = (qs.questions || []).map(q => {
+      const qId = q._id;
+      const ansObj = answers[qId] || {};
+      const selected = ansObj.option || null;
+      if (selected && q.correctAnswer === selected) score++;
+      return {
+        questionId: qId,
+        selectedOption: selected,
+        isUntimed: ansObj.isUntimed || false,
+        timeSpentSec: timeSpentMap[qId] || 0
+      };
     });
     try {
       await API.patch(`/mcq/attempts/${id}`, {

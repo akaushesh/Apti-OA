@@ -25,6 +25,7 @@ const answerSchema = new Schema({
     questionId: { type: Schema.Types.ObjectId, required: true },
     selectedOption: { type: String, enum: ['A', 'B', 'C', 'D', null], default: null },
     isUntimed: { type: Boolean, default: false },
+    timeSpentSec: { type: Number, default: 0 },
     answeredAt: { type: Date }
 });
 

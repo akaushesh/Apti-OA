@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 export default function ReviewScreen() {
   const { id } = useParams();
   const [attempt, setAttempt] = useState(null);
+  const [selectedSection, setSelectedSection] = useState("all");
   const [filter, setFilter] = useState("all");
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,13 +45,21 @@ export default function ReviewScreen() {
     );
   }
 
+  const formatSec = (sec) => {
+    if (!sec || sec <= 0) return "0s";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m === 0) return `${s}s`;
+    return `${m}m ${s}s`;
+  };
+
   const qs = attempt.questionSetId || {};
   const totalQuestions = attempt.totalQuestions || qs.questions?.length || 0;
 
   const ansMap = {};
   if (attempt.answers) {
     attempt.answers.forEach(a => {
-      ansMap[a.questionId] = { option: a.selectedOption, isUntimed: a.isUntimed };
+      ansMap[a.questionId] = { option: a.selectedOption, isUntimed: a.isUntimed, timeSpentSec: a.timeSpentSec || 0 };
     });
   }
 
@@ -58,6 +67,7 @@ export default function ReviewScreen() {
   let countIncorrect = 0;
   let countSkipped = 0;
   let countUntimed = 0;
+  let totalTimeSec = 0;
 
   const processedQuestions = qs.questions?.map((q) => {
     const ans = ansMap[q._id] || {};
@@ -65,17 +75,49 @@ export default function ReviewScreen() {
     const isCorrect = selected === q.correctAnswer;
     const isSkipped = !selected;
     const isUntimed = ans.isUntimed;
+    const timeSpentSec = ans.timeSpentSec || 0;
 
     if (isSkipped) countSkipped++;
     else if (isCorrect) countCorrect++;
     else countIncorrect++;
 
     if (isUntimed && !isSkipped) countUntimed++;
+    totalTimeSec += timeSpentSec;
 
-    return { ...q, selected, isCorrect, isSkipped, isUntimed };
+    return { ...q, selected, isCorrect, isSkipped, isUntimed, timeSpentSec };
   }) || [];
 
-  const filteredQuestions = processedQuestions.filter(q => {
+  const sectionStats = {};
+  processedQuestions.forEach(q => {
+    const secName = q.section || "General";
+    if (!sectionStats[secName]) {
+      sectionStats[secName] = { total: 0, correct: 0, incorrect: 0, skipped: 0, totalTimeSec: 0 };
+    }
+    sectionStats[secName].total += 1;
+    if (q.isSkipped) sectionStats[secName].skipped += 1;
+    else if (q.isCorrect) sectionStats[secName].correct += 1;
+    else sectionStats[secName].incorrect += 1;
+    sectionStats[secName].totalTimeSec += q.timeSpentSec;
+  });
+
+  const sectionFilteredQuestions = processedQuestions.filter(q => {
+    if (selectedSection === "all") return true;
+    return (q.section || "General") === selectedSection;
+  });
+
+  let secCorrect = 0;
+  let secIncorrect = 0;
+  let secSkipped = 0;
+  let secUntimed = 0;
+
+  sectionFilteredQuestions.forEach(q => {
+    if (q.isSkipped) secSkipped++;
+    else if (q.isCorrect) secCorrect++;
+    else secIncorrect++;
+    if (q.isUntimed && !q.isSkipped) secUntimed++;
+  });
+
+  const filteredQuestions = sectionFilteredQuestions.filter(q => {
     if (filter === "all") return true;
     if (filter === "correct") return q.isCorrect && !q.isSkipped;
     if (filter === "incorrect") return !q.isCorrect && !q.isSkipped;
@@ -152,6 +194,9 @@ export default function ReviewScreen() {
           </p>
 
           <div className="flex flex-wrap items-center gap-4 mt-6 text-xs font-bold">
+            <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-3 py-1.5 rounded-xl border border-blue-200/50 dark:border-blue-800/50">
+              <span>⏱️ Total Time: {formatSec(totalTimeSec)}</span>
+            </div>
             <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl border border-emerald-200/50 dark:border-emerald-800/50">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Correct: {countCorrect}</span>
@@ -190,27 +235,133 @@ export default function ReviewScreen() {
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 custom-scrollbar-hide">
-        {[
-          { key: 'all', label: `All (${processedQuestions.length})` },
-          { key: 'correct', label: `Correct (${countCorrect})` },
-          { key: 'incorrect', label: `Incorrect (${countIncorrect})` },
-          { key: 'skipped', label: `Skipped (${countSkipped})` },
-          { key: 'untimed', label: `Untimed (${countUntimed})` },
-        ].map(f => (
-          <button 
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-              filter === f.key 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
-                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      {/* Section-wise Performance & Time Breakdown Cards */}
+      {Object.keys(sectionStats).length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Section Breakdown & Time Spent (Click card to filter)
+            </h3>
+            {selectedSection !== "all" && (
+              <button 
+                onClick={() => setSelectedSection("all")} 
+                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                Clear Section Filter
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(sectionStats).map(([secName, stat]) => {
+              const secAccuracy = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
+              const isSelected = selectedSection === secName;
+              return (
+                <button
+                  key={secName}
+                  onClick={() => setSelectedSection(isSelected ? "all" : secName)}
+                  className={`text-left bg-white dark:bg-slate-800 p-5 rounded-2xl border transition-all cursor-pointer shadow-xs flex flex-col justify-between ${
+                    isSelected 
+                      ? 'border-blue-500 ring-2 ring-blue-500/30 dark:border-blue-400 bg-blue-50/20 dark:bg-blue-950/20' 
+                      : 'border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-extrabold text-slate-900 dark:text-white text-sm">
+                        {secName}
+                      </span>
+                      <span className="px-2.5 py-1 text-[11px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                        ⏱️ {formatSec(stat.totalTimeSec)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-3">
+                      <span>{stat.correct} / {stat.total} Correct</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">{secAccuracy}%</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] font-bold">
+                    <span className="bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md">
+                      ✓ {stat.correct}
+                    </span>
+                    <span className="bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 px-2 py-0.5 rounded-md">
+                      ✗ {stat.incorrect}
+                    </span>
+                    <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md">
+                      - {stat.skipped} skipped
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Filter Tabs (Section & Status Filter Controls) */}
+      <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 mb-6 space-y-4 shadow-xs">
+        
+        {/* Section Tabs */}
+        {Object.keys(sectionStats).length > 0 && (
+          <div>
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
+              Section:
+            </span>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar-hide">
+              <button
+                onClick={() => setSelectedSection("all")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  selectedSection === "all"
+                    ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                }`}
+              >
+                All Sections ({processedQuestions.length})
+              </button>
+              {Object.entries(sectionStats).map(([secName, stat]) => (
+                <button
+                  key={secName}
+                  onClick={() => setSelectedSection(secName)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+                    selectedSection === secName
+                      ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-sm"
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                  }`}
+                >
+                  <span>{secName}</span>
+                  <span className="opacity-75 font-mono text-[10px]">({stat.total})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Status Tabs */}
+        <div>
+          <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 block">
+            Status {selectedSection !== "all" ? `(${selectedSection})` : "(All Sections)"}:
+          </span>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar-hide">
+            {[
+              { key: 'all', label: `All (${sectionFilteredQuestions.length})` },
+              { key: 'correct', label: `Correct (${secCorrect})` },
+              { key: 'incorrect', label: `Incorrect (${secIncorrect})` },
+              { key: 'skipped', label: `Skipped (${secSkipped})` },
+              { key: 'untimed', label: `Untimed (${secUntimed})` },
+            ].map(f => (
+              <button 
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  filter === f.key 
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' 
+                    : 'bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Questions Breakdown List */}
@@ -227,7 +378,10 @@ export default function ReviewScreen() {
                   <span className="text-slate-400 dark:text-slate-500 mr-2 font-mono">Q{originalIdx !== undefined && originalIdx >= 0 ? originalIdx + 1 : ''}.</span> 
                   {q.questionText}
                 </h3>
-                <div className="shrink-0 flex items-center gap-2">
+                <div className="shrink-0 flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-1 text-[11px] font-mono font-extrabold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200/50 dark:border-blue-800/50">
+                    ⏱️ {formatSec(q.timeSpentSec)}
+                  </span>
                   {!q.isSkipped && q.isUntimed && (
                     <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 rounded-full border border-amber-200 dark:border-amber-800">
                       Untimed
