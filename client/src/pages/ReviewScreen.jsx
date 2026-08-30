@@ -9,6 +9,7 @@ export default function ReviewScreen() {
   const [selectedSection, setSelectedSection] = useState("all");
   const [filter, setFilter] = useState("all");
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -128,9 +129,164 @@ export default function ReviewScreen() {
 
   const accuracyPercent = totalQuestions > 0 ? Math.round((countCorrect / totalQuestions) * 100) : 0;
 
+  const generateSummarizedReport = () => {
+    let report = `# Test Attempt Summary: ${qs.name || "Question Set"}\n`;
+    report += `- **Date**: ${new Date(attempt.createdAt).toLocaleString()}\n`;
+    report += `- **Score**: ${attempt.scoreAtTimeUp} / ${totalQuestions} (${accuracyPercent}% Accuracy)\n`;
+    report += `- **Total Time Taken**: ${formatSec(totalTimeSec)}\n`;
+    report += `- **Breakdown**: ${countCorrect} Correct, ${countIncorrect} Incorrect, ${countSkipped} Skipped, ${countUntimed} Untimed\n\n`;
+
+    if (Object.keys(sectionStats).length > 0) {
+      report += `## Section Breakdown\n`;
+      Object.entries(sectionStats).forEach(([secName, stat]) => {
+        const secAcc = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
+        report += `- **${secName}**: ${stat.correct}/${stat.total} Correct (${secAcc}%) | Time: ${formatSec(stat.totalTimeSec)} | Correct: ${stat.correct}, Incorrect: ${stat.incorrect}, Skipped: ${stat.skipped}\n`;
+      });
+    }
+    return report;
+  };
+
+  const generateDetailedLLMReport = () => {
+    let report = `# Comprehensive Test Performance & Error Analysis Report\n\n`;
+    report += `## Attempt Overview\n`;
+    report += `- **Question Set**: ${qs.name || "Question Set"}\n`;
+    report += `- **Date**: ${new Date(attempt.createdAt).toLocaleString()}\n`;
+    report += `- **Overall Score**: ${attempt.scoreAtTimeUp} / ${totalQuestions}\n`;
+    report += `- **Accuracy Rate**: ${accuracyPercent}%\n`;
+    report += `- **Total Time Spent**: ${formatSec(totalTimeSec)}\n`;
+    report += `- **Total Correct**: ${countCorrect}\n`;
+    report += `- **Total Incorrect**: ${countIncorrect}\n`;
+    report += `- **Total Skipped**: ${countSkipped}\n\n`;
+
+    if (Object.keys(sectionStats).length > 0) {
+      report += `## Section Summary\n`;
+      Object.entries(sectionStats).forEach(([secName, stat]) => {
+        const secAcc = stat.total > 0 ? Math.round((stat.correct / stat.total) * 100) : 0;
+        report += `- **${secName}**: ${stat.correct}/${stat.total} Correct (${secAcc}%) | Time Spent: ${formatSec(stat.totalTimeSec)}\n`;
+      });
+      report += `\n`;
+    }
+
+    report += `## Detailed Question Logs\n\n`;
+    processedQuestions.forEach((q, idx) => {
+      const statusStr = q.isSkipped ? "SKIPPED" : q.isCorrect ? "CORRECT" : "INCORRECT";
+      report += `### Q${idx + 1}. [Section: ${q.section || "General"}] [Status: ${statusStr}]\n`;
+      report += `- **Question**: ${q.questionText}\n`;
+      report += `- **Options**: A) ${q.optionA} | B) ${q.optionB} | C) ${q.optionC} | D) ${q.optionD}\n`;
+      report += `- **Selected Answer**: ${q.selected || "None (Skipped)"}\n`;
+      report += `- **Correct Answer**: ${q.correctAnswer}\n`;
+      report += `- **Time Spent**: ${formatSec(q.timeSpentSec)} (${q.timeSpentSec || 0}s)\n`;
+      if (q.isUntimed) report += `- **Mode**: Untimed\n`;
+      report += `\n`;
+    });
+
+    return report;
+  };
+
+  const handleCopyReport = (type) => {
+    const text = type === "summary" ? generateSummarizedReport() : generateDetailedLLMReport();
+    navigator.clipboard.writeText(text)
+      .then(() => toast.success(type === "summary" ? "Summarized report copied!" : "Detailed LLM report copied!"))
+      .catch(() => toast.error("Failed to copy report"));
+  };
+
+  const handleDownloadReport = (type) => {
+    const text = type === "summary" ? generateSummarizedReport() : generateDetailedLLMReport();
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(qs.name || "test").replace(/\s+/g, "_")}_report_${type}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Report downloaded");
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       
+      {/* Export Report Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 max-w-lg w-full border border-slate-100 dark:border-slate-700 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Export Performance Report</h3>
+              <button 
+                onClick={() => setShowExportModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <p className="text-slate-500 dark:text-slate-400 text-xs mb-6">
+              Choose a report format below. The detailed report includes complete question logs, options, selected answers, and time spent, formatted for LLM analysis.
+            </p>
+
+            <div className="space-y-4">
+              {/* Option 1: Summarized Report */}
+              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-slate-900 dark:text-white text-sm">📊 Summarized Report</span>
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded-md">Compact</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Scores, overall accuracy, total time, and section-by-section breakdown.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleCopyReport("summary")}
+                    className="px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-sm active:scale-95"
+                  >
+                    📋 Copy Summary
+                  </button>
+                  <button
+                    onClick={() => handleDownloadReport("summary")}
+                    className="px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 rounded-xl transition-all active:scale-95"
+                  >
+                    💾 Download .md
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: Detailed LLM Report */}
+              <div className="p-4 rounded-2xl border border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-bold text-slate-900 dark:text-white text-sm">🤖 Detailed LLM Analysis Report</span>
+                  <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded-md">LLM Optimized</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Full attempt details including every question, option choices, user answers, correct answers, and exact time spent per question. Ready to paste into ChatGPT/Claude.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleCopyReport("detailed")}
+                    className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm active:scale-95"
+                  >
+                    📋 Copy Detailed Report
+                  </button>
+                  <button
+                    onClick={() => handleDownloadReport("detailed")}
+                    className="px-3.5 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 rounded-xl transition-all active:scale-95"
+                  >
+                    💾 Download .md
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button 
+                onClick={() => setShowExportModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
@@ -167,6 +323,12 @@ export default function ReviewScreen() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowExportModal(true)} 
+            className="px-3.5 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 rounded-xl transition-colors flex items-center gap-1.5"
+          >
+            <span>📥 Export Report</span>
+          </button>
           <button 
             onClick={() => setShowConfirm(true)} 
             className="px-3.5 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 rounded-xl transition-colors"
