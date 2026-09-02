@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import API from "../api/axios";
 import toast from "react-hot-toast";
+import FormattedQuestionText from "../components/FormattedQuestionText";
 
 export default function AttemptScreen() {
   const { id } = useParams();
@@ -482,7 +483,9 @@ export default function AttemptScreen() {
                     </button>
                   </div>
 
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">{currentQ.questionText}</h2>
+                  <div className="mb-8 font-bold leading-relaxed text-slate-900 dark:text-white">
+                    <FormattedQuestionText text={currentQ.questionText} section={currentQ.section} />
+                  </div>
 
                   <div className="space-y-3">
                     {['A', 'B', 'C', 'D'].map(opt => {
@@ -771,9 +774,9 @@ export default function AttemptScreen() {
                     </button>
                   </div>
 
-                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">
-                    {currentQ.questionText}
-                  </h2>
+                  <div className="mb-8 font-bold leading-relaxed text-slate-900 dark:text-white">
+                    <FormattedQuestionText text={currentQ.questionText} section={currentQ.section} />
+                  </div>
 
                   <div className="space-y-3">
                     {['A', 'B', 'C', 'D'].map(opt => {
@@ -1029,7 +1032,9 @@ export default function AttemptScreen() {
               </button>
             </div>
 
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-8 leading-relaxed">{currentQ.questionText}</h2>
+            <div className="mb-8 font-bold leading-relaxed text-slate-900 dark:text-white">
+              <FormattedQuestionText text={currentQ.questionText} section={currentQ.section} />
+            </div>
 
             <div className="space-y-3">
               {['A', 'B', 'C', 'D'].map(opt => {

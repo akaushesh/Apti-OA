@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import API from "../api/axios";
 import toast from "react-hot-toast";
+import FormattedQuestionText from "../components/FormattedQuestionText";
 
 export default function ReviewScreen() {
   const { id } = useParams();
@@ -536,10 +537,12 @@ export default function ReviewScreen() {
               
               {/* Question Header & Status Badge */}
               <div className="flex items-start justify-between gap-4 mb-4">
-                <h3 className="font-bold text-slate-900 dark:text-white text-base sm:text-lg leading-relaxed">
-                  <span className="text-slate-400 dark:text-slate-500 mr-2 font-mono">Q{originalIdx !== undefined && originalIdx >= 0 ? originalIdx + 1 : ''}.</span> 
-                  {q.questionText}
-                </h3>
+                <div className="flex-1">
+                  <span className="text-slate-400 dark:text-slate-500 mr-2 font-mono font-bold text-base sm:text-lg">
+                    Q{originalIdx !== undefined && originalIdx >= 0 ? originalIdx + 1 : ''}.
+                  </span>
+                  <FormattedQuestionText text={q.questionText} section={q.section} className="mt-1" />
+                </div>
                 <div className="shrink-0 flex flex-wrap items-center gap-2">
                   <span className="px-2.5 py-1 text-[11px] font-mono font-extrabold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200/50 dark:border-blue-800/50">
                     ⏱️ {formatSec(q.timeSpentSec)}

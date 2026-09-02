@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import API from "../api/axios";
 import { useNavigate, Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import FormattedQuestionText from "../components/FormattedQuestionText";
 
 const SAMPLE_JSON = `[
   {
@@ -427,7 +428,9 @@ export default function BulkUpload() {
                             Answer: {q.correctAnswer}
                           </span>
                         </div>
-                        <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3">{q.questionText}</h4>
+                        <div className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
+                          <FormattedQuestionText text={q.questionText} section={q.section} />
+                        </div>
                         
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           {['A', 'B', 'C', 'D'].map(opt => {

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import API from "../api/axios";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import toast from "react-hot-toast";
+import FormattedQuestionText from "../components/FormattedQuestionText";
 
 const PRESETS = [5, 10, 15, 20, 30, 45];
 
@@ -412,7 +413,9 @@ export default function EditSet() {
                       Answer: Option {q.correctAnswer}
                     </span>
                   </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3">{q.questionText}</h4>
+                  <div className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
+                    <FormattedQuestionText text={q.questionText} section={q.section} />
+                  </div>
                   
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {['A', 'B', 'C', 'D'].map(opt => {
