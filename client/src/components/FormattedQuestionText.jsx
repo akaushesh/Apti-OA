@@ -1,10 +1,9 @@
 import React from 'react';
 
 /**
- * ponytail: Normal Question Renderer.
- * Removes artificial shaded box containers around text, keeping question text normal,
- * clean, and readable with natural whitespace-pre-line paragraphs, while preserving
- * SVG graphs and data tables for Data Interpretation.
+ * ponytail: Visual Chart & Data Table Dual Renderer.
+ * Shows BOTH the visual SVG chart and the exact data table underneath for all Data Interpretation questions,
+ * ensuring values are always 100% visible and readable even if visual chart nodes overlap.
  * Ceiling: SVG chart generators covering 2D bar, line, pie, and combo charts. Upgrade path: Canvas/WebGL if 3D requested.
  */
 
@@ -343,6 +342,34 @@ export default function FormattedQuestionText({ text, section = "", className = 
     lowerText.includes("combination chart") ||
     lowerText.includes("histogram");
 
+  // Helper to render clean data table alongside visual chart
+  const renderDataTable = (headers, rows) => (
+    <div className="mt-3 mb-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+      <table className="w-full text-left text-xs sm:text-sm border-collapse">
+        <thead>
+          <tr className="bg-slate-100 dark:bg-slate-700/80 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
+            {headers.map((h, i) => (
+              <th key={i} className="px-4 py-2.5 font-bold uppercase tracking-wider text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-mono">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60 bg-white dark:bg-slate-800">
+          {rows.map((r, ri) => (
+            <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-slate-50/60 dark:bg-slate-800/50'}>
+              {r.map((cell, ci) => (
+                <td key={ci} className={`px-4 py-2.5 text-slate-800 dark:text-slate-200 font-medium whitespace-nowrap font-mono ${ci === 0 ? 'font-bold' : ''}`}>
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   // Markdown Pipe Table Parser
   const parseTable = (lines) => {
     const tableLines = lines.filter(l => l.trim().includes('|'));
@@ -361,39 +388,14 @@ export default function FormattedQuestionText({ text, section = "", className = 
     const headers = cleanRows[0];
     const bodyRows = cleanRows.slice(1);
 
-    return (
-      <div className="my-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-        <table className="w-full text-left text-xs sm:text-sm border-collapse">
-          <thead>
-            <tr className="bg-slate-100 dark:bg-slate-700/80 text-slate-800 dark:text-slate-200 font-bold border-b border-slate-200 dark:border-slate-700">
-              {headers.map((h, i) => (
-                <th key={i} className="px-4 py-2.5 font-bold uppercase tracking-wider text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-mono">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60 bg-white dark:bg-slate-800">
-            {bodyRows.map((r, ri) => (
-              <tr key={ri} className={ri % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-slate-50/60 dark:bg-slate-800/50'}>
-                {r.map((cell, ci) => (
-                  <td key={ci} className="px-4 py-2.5 text-slate-800 dark:text-slate-200 font-medium whitespace-nowrap font-mono">
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+    return renderDataTable(headers, bodyRows);
   };
 
-  // Explicit Graph Matching Parser
+  // Explicit Graph Matching Parser (Renders BOTH Graph and Reference Table!)
   const parseExplicitGraph = (lines, fullBlockText) => {
     if (!isDataInterpretationSection) return null;
 
-    const kvLines = lines.filter(l => /^[A-Za-z0-9\s\(\)]+:\s*.+$/.test(l.trim()));
+    const kvLines = lines.filter(l => !l.trim().toLowerCase().startsWith("question:") && /^[A-Za-z0-9\s\(\)]+:\s*.+$/.test(l.trim()));
 
     // 1. Line Graph
     if (lowerText.includes("line graph") || (lines.length === 1 && lines[0].includes(":") && lines[0].includes(","))) {
@@ -405,7 +407,15 @@ export default function FormattedQuestionText({ text, section = "", className = 
         }).filter(i => i.label && i.value);
 
         if (items.length >= 3) {
-          return <RenderLineGraph title="Monthly Rainfall Recorded (mm)" points={items} />;
+          return (
+            <div className="my-4">
+              <RenderLineGraph title="Monthly Rainfall Recorded (mm)" points={items} />
+              {renderDataTable(
+                ["Month / Period", "Rainfall (mm)"],
+                items.map(it => [it.label, `${it.value} mm`])
+              )}
+            </div>
+          );
         }
       }
     }
@@ -427,7 +437,15 @@ export default function FormattedQuestionText({ text, section = "", className = 
       const metricKeys = Array.from(new Set(parsed.flatMap(p => Object.keys(p.metrics))));
       const entities = parsed.map(p => p.name);
 
-      return <RenderBarChart title="Units Sold (in hundreds) by Four Stores" entities={entities} metricKeys={metricKeys} data={parsed} />;
+      return (
+        <div className="my-4">
+          <RenderBarChart title="Units Sold (in hundreds) by Four Stores" entities={entities} metricKeys={metricKeys} data={parsed} />
+          {renderDataTable(
+            ["Store / Entity", ...metricKeys],
+            parsed.map(row => [row.name, ...metricKeys.map(mk => row.metrics[mk] || '-')])
+          )}
+        </div>
+      );
     }
 
     // 3. Combination Chart
@@ -442,21 +460,38 @@ export default function FormattedQuestionText({ text, section = "", className = 
         );
         return { name: name.trim(), metrics };
       });
+      const metricKeys = Array.from(new Set(parsed.flatMap(p => Object.keys(p.metrics))));
 
-      return <RenderComboChart title="Quarterly Production vs Sales" data={parsed} />;
+      return (
+        <div className="my-4">
+          <RenderComboChart title="Quarterly Production vs Sales" data={parsed} />
+          {renderDataTable(
+            ["Period / Quarter", ...metricKeys],
+            parsed.map(row => [row.name, ...metricKeys.map(mk => row.metrics[mk] || '-')])
+          )}
+        </div>
+      );
     }
 
     // 4. Pie Chart
     if (lowerText.includes("pie chart") || kvLines.every(l => l.includes(':') && (l.includes('%') || !isNaN(parseInt(l.split(':')[1]))))) {
       const items = kvLines.map(l => {
         const [k, v] = l.split(':');
-        return { label: k.trim(), value: parseFloat(v) || 0 };
+        return { label: k.trim(), value: parseFloat(v) || 0, rawVal: v.trim() };
       });
 
       const totalMatch = fullBlockText.match(/Total\s*=\s*[₹$]?([\d,]+)/i);
       const totalSum = totalMatch ? parseFloat(totalMatch[1].replace(/,/g, '')) : 0;
 
-      return <RenderPieChart items={items} totalSum={totalSum} />;
+      return (
+        <div className="my-4">
+          <RenderPieChart items={items} totalSum={totalSum} />
+          {renderDataTable(
+            ["Category", "Percentage / Share"],
+            items.map(it => [it.label, it.rawVal])
+          )}
+        </div>
+      );
     }
 
     return null;
@@ -475,13 +510,13 @@ export default function FormattedQuestionText({ text, section = "", className = 
           if (tableNode) return <React.Fragment key={bIdx}>{tableNode}</React.Fragment>;
         }
 
-        // Explicit Graph Node
+        // Explicit Graph & Table Dual Node
         if (isDataInterpretationSection) {
           const graphNode = parseExplicitGraph(lines, block);
           if (graphNode) return <React.Fragment key={bIdx}>{graphNode}</React.Fragment>;
         }
 
-        // Normal paragraph text (clean, unboxed, whitespace-pre-line)
+        // Normal paragraph text
         return (
           <p key={bIdx} className="text-base sm:text-lg font-semibold leading-relaxed text-slate-900 dark:text-white whitespace-pre-line">
             {block}
