@@ -5,14 +5,16 @@ const app = express();
 
 
 const allowedOrigins = [
-  process.env.CORS_ORIGIN || "http://localhost:5173" || "https://apti-oa.vercel.app/"
-];
+  "http://localhost:5173",
+  "https://apti-oa.vercel.app",
+  ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : [])
+].map(origin => origin.trim().replace(/\/$/, ""));
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like Postman) or from allowedOrigins
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like Postman), matched origins, or wildcard
+      if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
         callback(null, true);
       } else {
         callback(new Error("❌ Not allowed by CORS"));
