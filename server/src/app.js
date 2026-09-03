@@ -5,7 +5,7 @@ const app = express();
 
 
 const allowedOrigins = [
-  process.env.CORS_ORIGIN || "http://localhost:5173"
+  process.env.CORS_ORIGIN || "http://localhost:5173" || "https://apti-oa.vercel.app/"
 ];
 
 app.use(
