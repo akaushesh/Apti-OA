@@ -71,11 +71,18 @@ export default function ReviewScreen() {
   let countUntimed = 0;
   let totalTimeSec = 0;
 
-  const processedQuestions = qs.questions?.map((q) => {
-    const ans = ansMap[q._id] || {};
+  const processedQuestions = qs.questions?.map((q, idx) => {
+    // ponytail: fallback to positional answer if IDs were decoupled by prior unpatched edits
+    const ans = ansMap[q._id] || (attempt.answers?.[idx] ? {
+      option: attempt.answers[idx].selectedOption,
+      isUntimed: attempt.answers[idx].isUntimed,
+      timeSpentSec: attempt.answers[idx].timeSpentSec || 0
+    } : {});
     const selected = ans.option;
-    const isCorrect = selected === q.correctAnswer;
-    const isSkipped = !selected;
+    const ca = q.correctAnswer?.toString().trim().toUpperCase() || '';
+    const isBonus = ['ALL', 'BONUS', '*'].includes(ca);
+    const isCorrect = isBonus || (selected && (ca.includes(',') ? ca.split(',').map(s => s.trim()).includes(selected) : ca.includes(selected)));
+    const isSkipped = !selected && !isBonus;
     const isUntimed = ans.isUntimed;
     const timeSpentSec = ans.timeSpentSec || 0;
 
@@ -86,7 +93,7 @@ export default function ReviewScreen() {
     if (isUntimed && !isSkipped) countUntimed++;
     totalTimeSec += timeSpentSec;
 
-    return { ...q, selected, isCorrect, isSkipped, isUntimed, timeSpentSec };
+    return { ...q, selected, isCorrect, isSkipped, isUntimed, isBonus, timeSpentSec };
   }) || [];
 
   const sectionStats = {};
@@ -552,7 +559,11 @@ export default function ReviewScreen() {
                       Untimed
                     </span>
                   )}
-                  {q.isSkipped ? (
+                  {q.isBonus ? (
+                    <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 rounded-full border border-purple-200 dark:border-purple-800">
+                      Bonus Awarded
+                    </span>
+                  ) : q.isSkipped ? (
                     <span className="px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full border border-slate-200 dark:border-slate-600">
                       Skipped
                     </span>
@@ -572,7 +583,8 @@ export default function ReviewScreen() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 {['A', 'B', 'C', 'D'].map(opt => {
                   const isSelectedOpt = q.selected === opt;
-                  const isCorrectOpt = q.correctAnswer === opt;
+                  const ca = q.correctAnswer?.toString().trim().toUpperCase() || '';
+                  const isCorrectOpt = q.isBonus || (ca.includes(',') ? ca.split(',').map(s => s.trim()).includes(opt) : ca.includes(opt));
                   
                   let optStyle = "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300";
                   if (isCorrectOpt) {
@@ -598,7 +610,7 @@ export default function ReviewScreen() {
 
                       {isCorrectOpt && (
                         <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-md">
-                          Correct Answer
+                          {q.isBonus ? "Bonus Option" : "Correct Answer"}
                         </span>
                       )}
                       {isSelectedOpt && !isCorrectOpt && (

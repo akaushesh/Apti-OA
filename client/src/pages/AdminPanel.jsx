@@ -16,6 +16,7 @@ export default function AdminPanel() {
 
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: null, id: null, title: "" });
   const [detailModal, setDetailModal] = useState({ isOpen: false, loading: false, data: null });
+  const [reevaluatingSetId, setReevaluatingSetId] = useState(null);
 
   const loadAdminData = async () => {
     setLoading(true);
@@ -85,6 +86,23 @@ export default function AdminPanel() {
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || "Failed to execute delete operation");
+    }
+  };
+
+  const handleReevaluateSet = async (setId, setName) => {
+    setReevaluatingSetId(setId);
+    try {
+      const res = await API.post(`/mcq/question-sets/${setId}/reevaluate`);
+      toast.success(res.data?.message || `Re-evaluated attempts for ${setName}`);
+      await loadAdminData();
+      if (detailModal.isOpen && detailModal.data?.user?._id) {
+        await handleOpenUserDetails(detailModal.data.user._id);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.message || "Failed to re-evaluate attempts");
+    } finally {
+      setReevaluatingSetId(null);
     }
   };
 
@@ -215,13 +233,22 @@ export default function AdminPanel() {
                             <span className="font-bold text-slate-900 dark:text-white text-sm">{s.name}</span>
                             <p className="text-slate-400 text-[11px] mt-0.5">{s.questions?.length || 0} questions • Added {new Date(s.createdAt).toLocaleDateString()}</p>
                           </div>
-                          <Link 
-                            to={`/edit-set/${s._id}`} 
-                            onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
-                            className="px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:underline"
-                          >
-                            View / Edit
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleReevaluateSet(s._id, s.name)}
+                              disabled={reevaluatingSetId === s._id}
+                              className="px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              {reevaluatingSetId === s._id ? "Re-evaluating..." : "Re-evaluate"}
+                            </button>
+                            <Link 
+                              to={`/edit-set/${s._id}`} 
+                              onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
+                              className="px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:underline"
+                            >
+                              View / Edit
+                            </Link>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -610,6 +637,26 @@ export default function AdminPanel() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleReevaluateSet(s._id, s.name)}
+                            disabled={reevaluatingSetId === s._id}
+                            className="px-3 py-1 text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                            title="Re-evaluate all attempts for this question set against latest answers"
+                          >
+                            {reevaluatingSetId === s._id ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                <span>Re-evaluating...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                <span>Re-evaluate</span>
+                              </>
+                            )}
+                          </button>
                           <Link 
                             to={`/edit-set/${s._id}`} 
                             className="px-3 py-1 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"

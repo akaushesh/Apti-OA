@@ -95,6 +95,18 @@ export default function AttemptScreen() {
           qsData.questions = questions;
         }
 
+        // ponytail: heal any answers whose question IDs got decoupled by prior unpatched edits
+        questions.forEach((q, idx) => {
+          if (!savedAns[q._id] && a.answers?.[idx]) {
+            savedAns[q._id] = { option: a.answers[idx].selectedOption, isUntimed: a.answers[idx].isUntimed || false };
+            if (a.answers[idx].timeSpentSec) {
+              savedTimes[q._id] = a.answers[idx].timeSpentSec;
+            }
+          }
+        });
+        setAnswers({ ...savedAns });
+        setTimeSpentMap({ ...savedTimes });
+
         setQs(qsData);
       })
       .catch(err => {
@@ -192,7 +204,10 @@ export default function AttemptScreen() {
       const qId = q._id;
       const ansObj = answers[qId] || {};
       const selected = ansObj.option || null;
-      if (selected && q.correctAnswer === selected) score++;
+      const ca = q.correctAnswer?.toString().trim().toUpperCase() || '';
+      const isBonus = ['ALL', 'BONUS', '*'].includes(ca);
+      const isCorrect = isBonus || (selected && (ca.includes(',') ? ca.split(',').map(s => s.trim()).includes(selected) : ca.includes(selected)));
+      if (isCorrect) score++;
       return {
         questionId: qId,
         selectedOption: selected,

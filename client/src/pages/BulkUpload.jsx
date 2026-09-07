@@ -66,10 +66,14 @@ export default function BulkUpload() {
             questions: [], sections: [] 
           };
         }
-        if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer?.toUpperCase())) {
+        const ans = q.correctAnswer?.toString().trim().toUpperCase();
+        const isBonus = ['ALL', 'BONUS', '*'].includes(ans);
+        const isLetter = ['A', 'B', 'C', 'D'].includes(ans);
+        const isMulti = ans && ans.split(',').every(p => ['A', 'B', 'C', 'D'].includes(p.trim()));
+        if (!isBonus && !isLetter && !isMulti) {
           return {
             valid: false,
-            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be A, B, C, or D`,
+            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be 'A', 'B', 'C', 'D', 'ALL', or 'BONUS'`,
             questions: [], sections: []
           };
         }

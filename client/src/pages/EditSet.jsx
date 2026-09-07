@@ -13,6 +13,7 @@ export default function EditSet() {
   const [defaultDurationMin, setDefaultDurationMin] = useState(15);
   const [sectionDurationsMin, setSectionDurationsMin] = useState({});
   const [text, setText] = useState("");
+  const [originalQuestions, setOriginalQuestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -29,6 +30,7 @@ export default function EditSet() {
         setSectionDurationsMin(set.defaultSectionDurationsMin
           ? Object.fromEntries(Object.entries(set.defaultSectionDurationsMin))
           : {});
+        setOriginalQuestions(set.questions || []);
         
         const cleanQuestions = set.questions.map(q => {
           const { _id, ...rest } = q;
@@ -64,10 +66,14 @@ export default function EditSet() {
             questions: [], sections: []
           };
         }
-        if (!['A', 'B', 'C', 'D'].includes(q.correctAnswer?.toUpperCase())) {
+        const ans = q.correctAnswer?.toString().trim().toUpperCase();
+        const isBonus = ['ALL', 'BONUS', '*'].includes(ans);
+        const isLetter = ['A', 'B', 'C', 'D'].includes(ans);
+        const isMulti = ans && ans.split(',').every(p => ['A', 'B', 'C', 'D'].includes(p.trim()));
+        if (!isBonus && !isLetter && !isMulti) {
           return {
             valid: false,
-            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be 'A', 'B', 'C', or 'D'`,
+            error: `Item #${i + 1} has invalid correctAnswer "${q.correctAnswer}". Must be 'A', 'B', 'C', 'D', 'ALL', or 'BONUS'`,
             questions: [], sections: []
           };
         }
@@ -99,12 +105,26 @@ export default function EditSet() {
 
     setSaving(true);
     try {
+      // ponytail: map back original question _ids where possible so server receives intact IDs
+      const questionsWithIds = parseResult.questions.map((q, idx) => {
+        if (q._id) return q;
+        const orig = originalQuestions[idx];
+        if (orig && (orig.questionText === q.questionText || originalQuestions.length === parseResult.questions.length)) {
+          return { ...q, _id: orig._id };
+        }
+        const textMatch = originalQuestions.find(o => o.questionText === q.questionText);
+        if (textMatch) {
+          return { ...q, _id: textMatch._id };
+        }
+        return q;
+      });
+
       await API.put(`/mcq/question-sets/${id}`, { 
         name: name.trim(),
         category: category.trim() || "General",
         defaultDurationMin,
         defaultSectionDurationsMin: sectionDurationsMin,
-        questions: parseResult.questions 
+        questions: questionsWithIds 
       });
       toast.success("Question set updated successfully!");
       navigate("/");
@@ -410,7 +430,9 @@ export default function EditSet() {
                       Question {idx + 1}
                     </span>
                     <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200/50 dark:border-emerald-800/50">
-                      Answer: Option {q.correctAnswer}
+                      {['ALL', 'BONUS', '*'].includes(q.correctAnswer?.toUpperCase().trim())
+                        ? "Answer: Bonus (All Correct)"
+                        : `Answer: Option ${q.correctAnswer}`}
                     </span>
                   </div>
                   <div className="mb-3 text-sm font-bold text-slate-900 dark:text-white">
@@ -419,7 +441,8 @@ export default function EditSet() {
                   
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {['A', 'B', 'C', 'D'].map(opt => {
-                      const isCorrect = q.correctAnswer?.toUpperCase() === opt;
+                      const isBonus = ['ALL', 'BONUS', '*'].includes(q.correctAnswer?.toUpperCase().trim());
+                      const isCorrect = isBonus || q.correctAnswer?.toUpperCase().includes(opt);
                       return (
                         <div 
                           key={opt} 

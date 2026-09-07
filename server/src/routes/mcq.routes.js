@@ -9,6 +9,7 @@ import {
     getAttempts, 
     getAttemptById,
     updateQuestionSet,
+    reevaluateQuestionSet,
     deleteQuestionSet,
     deleteAttempt
 } from "../controllers/mcq.controller.js";
@@ -23,7 +24,11 @@ router.route("/question-sets")
 router.route("/question-sets/:id")
     .get(getQuestionSetById)
     .put(updateQuestionSet)
+    .patch(updateQuestionSet)
     .delete(deleteQuestionSet);
+
+router.route("/question-sets/:id/reevaluate")
+    .post(reevaluateQuestionSet);
 
 router.route("/attempts")
     .post(startAttempt)

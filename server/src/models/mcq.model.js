@@ -7,7 +7,7 @@ const questionSchema = new Schema({
     optionB: { type: String, required: true },
     optionC: { type: String, required: true },
     optionD: { type: String, required: true },
-    correctAnswer: { type: String, enum: ['A', 'B', 'C', 'D'], required: true },
+    correctAnswer: { type: String, required: true, uppercase: true, trim: true },
 });
 
 const questionSetSchema = new Schema({
