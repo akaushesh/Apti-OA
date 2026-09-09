@@ -61,15 +61,12 @@ export default function AttemptScreen() {
             if (ans.timeSpentSec) savedTimes[ans.questionId] = ans.timeSpentSec;
           });
         }
-        setAnswers(savedAns);
-        setTimeSpentMap(savedTimes);
-
         if (!a.mockMode) setTimeLeft(a.timerDurationSec || 600);
 
         const setId = a.questionSetId?._id || a.questionSetId;
-        return API.get(`/mcq/question-sets/${setId}`).then(res2 => ({ res2, a }));
+        return API.get(`/mcq/question-sets/${setId}`).then(res2 => ({ res2, a, savedAns, savedTimes }));
       })
-      .then(({ res2, a }) => {
+      .then(({ res2, a, savedAns, savedTimes }) => {
         const qsData = res2.data.data;
         let questions = qsData.questions || [];
 
