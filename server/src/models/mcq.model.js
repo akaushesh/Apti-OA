@@ -46,7 +46,16 @@ const attemptSchema = new Schema({
     answers: [answerSchema],
     scoreAtTimeUp: { type: Number, default: 0 },
     finalScoreIfUntimed: { type: Number, default: 0 },
-    status: { type: String, enum: ['in-progress', 'completed'], default: 'in-progress' }
+    status: { type: String, enum: ['in-progress', 'completed', 'suspended'], default: 'in-progress' },
+    suspendedAt: { type: Date },
+    suspendReason: { type: String, default: '' },
+    currentSection: { type: String, default: '' },
+    currentQuestionIndex: { type: Number, default: 0 },
+    timeLeftSec: { type: Number },
+    sectionTimersLeft: { type: Map, of: Number, default: {} },
+    userOS: { type: String, default: '' },
+    userBrowser: { type: String, default: '' },
+    lastActiveAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
 export const Attempt = mongoose.model("Attempt", attemptSchema);

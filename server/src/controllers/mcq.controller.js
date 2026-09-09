@@ -37,7 +37,26 @@ export const getQuestionSetById = asyncHandler(async (req, res) => {
 });
 
 export const startAttempt = asyncHandler(async (req, res) => {
-    const { questionSetId, section, mockMode, freeNav, sectionTimers, timerDurationSec, totalQuestions } = req.body;
+    const { 
+        questionSetId, 
+        section, 
+        mockMode, 
+        freeNav, 
+        sectionTimers, 
+        timerDurationSec, 
+        totalQuestions,
+        userOS,
+        userBrowser 
+    } = req.body;
+
+    const initialSectionTimersLeft = {};
+    if (Array.isArray(sectionTimers)) {
+        sectionTimers.forEach(t => {
+            if (t.section && t.durationSec !== undefined) {
+                initialSectionTimersLeft[t.section] = t.durationSec;
+            }
+        });
+    }
 
     const attempt = await Attempt.create({
         userId: req.user._id,
@@ -47,24 +66,60 @@ export const startAttempt = asyncHandler(async (req, res) => {
         freeNav: !!freeNav,
         sectionTimers: sectionTimers || [],
         timerDurationSec,
+        timeLeftSec: timerDurationSec,
+        sectionTimersLeft: initialSectionTimersLeft,
         totalQuestions,
         answers: [],
-        status: 'in-progress'
+        status: 'in-progress',
+        currentSection: section || (sectionTimers?.[0]?.section || ''),
+        currentQuestionIndex: 0,
+        userOS: userOS || '',
+        userBrowser: userBrowser || '',
+        lastActiveAt: new Date()
     });
 
     res.status(201).json(new ApiResponse(201, "Attempt started", attempt));
 });
 
 export const updateAttempt = asyncHandler(async (req, res) => {
-    const { answers, scoreAtTimeUp, finalScoreIfUntimed, status } = req.body;
+    const existing = await Attempt.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!existing) throw new ApiError(404, "Attempt not found");
 
-    const attempt = await Attempt.findOneAndUpdate(
-        { _id: req.params.id, userId: req.user._id },
-        { answers, scoreAtTimeUp, finalScoreIfUntimed, status },
+    if (existing.status === 'completed' || existing.status === 'suspended' || existing.suspendReason) {
+        // ponytail: protect completed/suspended status from being reverted by ongoing browser heartbeats
+        return res.status(200).json(new ApiResponse(200, "Test is already completed or suspended", existing));
+    }
+
+    const { 
+        answers, 
+        scoreAtTimeUp, 
+        finalScoreIfUntimed, 
+        status,
+        currentSection,
+        currentQuestionIndex,
+        timeLeftSec,
+        sectionTimersLeft,
+        userOS,
+        userBrowser
+    } = req.body;
+
+    const updateFields = { lastActiveAt: new Date() };
+    if (answers !== undefined) updateFields.answers = answers;
+    if (scoreAtTimeUp !== undefined) updateFields.scoreAtTimeUp = scoreAtTimeUp;
+    if (finalScoreIfUntimed !== undefined) updateFields.finalScoreIfUntimed = finalScoreIfUntimed;
+    if (status !== undefined) updateFields.status = status;
+    if (currentSection !== undefined) updateFields.currentSection = currentSection;
+    if (currentQuestionIndex !== undefined) updateFields.currentQuestionIndex = currentQuestionIndex;
+    if (timeLeftSec !== undefined) updateFields.timeLeftSec = timeLeftSec;
+    if (sectionTimersLeft !== undefined) updateFields.sectionTimersLeft = sectionTimersLeft;
+    if (userOS !== undefined) updateFields.userOS = userOS;
+    if (userBrowser !== undefined) updateFields.userBrowser = userBrowser;
+
+    const attempt = await Attempt.findByIdAndUpdate(
+        req.params.id,
+        updateFields,
         { new: true }
     );
-
-    if (!attempt) throw new ApiError(404, "Attempt not found");
 
     res.status(200).json(new ApiResponse(200, "Attempt updated", attempt));
 });
@@ -285,9 +340,18 @@ export const deleteAttempt = asyncHandler(async (req, res) => {
 });
 
 export const getAttempts = asyncHandler(async (req, res) => {
-    const attempts = await Attempt.find({ userId: req.user._id })
-        .populate("questionSetId", "name category")
-        .sort({ createdAt: -1 });
+    const isAdminQuery = req.user?.role === 'admin' && (req.query.all === 'true' || req.query.admin === 'true');
+    const filter = isAdminQuery ? {} : { userId: req.user._id };
+
+    if (req.query.status) {
+        filter.status = req.query.status;
+    }
+
+    const attempts = await Attempt.find(filter)
+        .populate("questionSetId", "name category defaultDurationMin defaultSectionDurationsMin")
+        .populate("userId", "username fullName role")
+        .sort({ updatedAt: -1 });
+
     res.status(200).json(new ApiResponse(200, "Fetched attempts", attempts));
 });
 
@@ -319,3 +383,37 @@ export const getAttemptById = asyncHandler(async (req, res) => {
 
     res.status(200).json(new ApiResponse(200, "Fetched attempt", attempt));
 });
+
+export const suspendAttempt = asyncHandler(async (req, res) => {
+    if (req.user?.role !== 'admin') {
+        throw new ApiError(403, "Only administrators can suspend tests");
+    }
+    const { reason } = req.body;
+    const attempt = await Attempt.findById(req.params.id);
+    if (!attempt) throw new ApiError(404, "Attempt not found");
+
+    // Mark attempt finished and completed so it is removed from live monitor
+    attempt.status = 'completed';
+    attempt.suspendedAt = new Date();
+    attempt.suspendReason = reason || "Suspended by exam administrator";
+    await attempt.save();
+
+    res.status(200).json(new ApiResponse(200, "Attempt suspended and marked completed", attempt));
+});
+
+export const resumeAttempt = asyncHandler(async (req, res) => {
+    if (req.user?.role !== 'admin') {
+        throw new ApiError(403, "Only administrators can resume tests");
+    }
+    const attempt = await Attempt.findById(req.params.id);
+    if (!attempt) throw new ApiError(404, "Attempt not found");
+
+    attempt.status = 'in-progress';
+    attempt.suspendedAt = undefined;
+    attempt.suspendReason = '';
+    attempt.lastActiveAt = new Date();
+    await attempt.save();
+
+    res.status(200).json(new ApiResponse(200, "Attempt resumed successfully", attempt));
+});
+

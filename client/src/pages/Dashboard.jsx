@@ -3,6 +3,7 @@ import API from "../api/axios";
 import { Link, useNavigate } from "react-router-dom";
 import authService from "../services/Auth";
 import toast from "react-hot-toast";
+import ScoreTrendChart from "../components/ScoreTrendChart";
 
 export default function Dashboard() {
   const [sets, setSets] = useState([]);
@@ -197,6 +198,14 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Score Progression Graph */}
+      <ScoreTrendChart 
+        completedAttempts={completedAttempts} 
+        selectedCategory={selectedCategory} 
+        onResetCategory={setSelectedCategory}
+        loading={loading}
+      />
 
       {/* Search & Filter Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import API from "../api/axios";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
@@ -9,13 +9,14 @@ export default function AdminPanel() {
   const [questionSets, setQuestionSets] = useState([]);
   const [attempts, setAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const [activeTab, setActiveTab] = useState("users"); // 'users' | 'sets' | 'attempts'
+  const [activeTab, setActiveTab] = useState("live"); // 'live' | 'users' | 'sets' | 'attempts'
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, type: null, id: null, title: "" });
-  const [detailModal, setDetailModal] = useState({ isOpen: false, loading: false, data: null });
   const [reevaluatingSetId, setReevaluatingSetId] = useState(null);
 
   const loadAdminData = async () => {
@@ -25,7 +26,7 @@ export default function AdminPanel() {
         API.get("/users/admin/users"),
         API.get("/users/admin/analytics"),
         API.get("/mcq/question-sets"),
-        API.get("/mcq/attempts")
+        API.get("/mcq/attempts?all=true")
       ]);
       setUsers(usersRes.data.data || []);
       setAnalytics(analyticsRes.data.data || null);
@@ -43,29 +44,26 @@ export default function AdminPanel() {
     loadAdminData();
   }, []);
 
-  const handleToggleRole = async (userId, currentRole) => {
-    const newRole = currentRole === "admin" ? "user" : "admin";
+  const refreshAttempts = useCallback(async () => {
+    setRefreshing(true);
     try {
-      await API.patch(`/users/admin/users/${userId}/role`, { role: newRole });
-      toast.success(`User role updated to ${newRole.toUpperCase()}`);
-      loadAdminData();
-    } catch (err) {
-      console.error(err);
-      toast.error(err.response?.data?.message || "Failed to update user role");
+      const attemptsRes = await API.get("/mcq/attempts?all=true");
+      setAttempts(attemptsRes.data.data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const handleOpenUserDetails = async (userId) => {
-    setDetailModal({ isOpen: true, loading: true, data: null });
-    try {
-      const res = await API.get(`/users/admin/users/${userId}/details`);
-      setDetailModal({ isOpen: true, loading: false, data: res.data.data });
-    } catch (err) {
-      console.error(err);
-      toast.error(err.response?.data?.message || "Failed to fetch user details");
-      setDetailModal({ isOpen: false, loading: false, data: null });
-    }
-  };
+  // Background auto-refresh for live test monitor
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      refreshAttempts();
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, refreshAttempts]);
 
   const handleConfirmDelete = async () => {
     const { type, id } = confirmModal;
@@ -95,9 +93,6 @@ export default function AdminPanel() {
       const res = await API.post(`/mcq/question-sets/${setId}/reevaluate`);
       toast.success(res.data?.message || `Re-evaluated attempts for ${setName}`);
       await loadAdminData();
-      if (detailModal.isOpen && detailModal.data?.user?._id) {
-        await handleOpenUserDetails(detailModal.data.user._id);
-      }
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.message || "Failed to re-evaluate attempts");
@@ -106,13 +101,21 @@ export default function AdminPanel() {
     }
   };
 
+  // User category filtering
+  const [selectedUserCategory, setSelectedUserCategory] = useState("all");
+
+  const allUserCategories = Array.from(
+    new Set(users.flatMap(u => u.categories || []).filter(Boolean))
+  );
+
   // Filter users
   const filteredUsers = users.filter(u => {
     const matchesSearch = 
       (u.username || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (u.fullName || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRole = roleFilter === "all" ? true : u.role === roleFilter;
-    return matchesSearch && matchesRole;
+    const matchesCategory = selectedUserCategory === "all" ? true : (u.categories || []).includes(selectedUserCategory);
+    return matchesSearch && matchesRole && matchesCategory;
   });
 
   // Filter sets
@@ -120,204 +123,124 @@ export default function AdminPanel() {
     s.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const [liveFilterMode, setLiveFilterMode] = useState("active"); // 'active' | 'all' | 'suspended' | 'stale'
+
   // Filter attempts
   const filteredAttempts = attempts.filter(a => 
-    (a.questionSetId?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+    (a.questionSetId?.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (a.userId?.fullName || a.userId?.username || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Live attempts (in-progress or suspended)
+  const isRecentActive = (a) => {
+    const timestamp = a.lastActiveAt || a.updatedAt;
+    if (!timestamp) return false;
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    return diffMs < 5 * 60 * 1000; // active within last 5 minutes
+  };
+
+  const inProgressAttempts = attempts.filter(a => a.status === 'in-progress' && !a.suspendReason);
+  const activeNowAttempts = inProgressAttempts.filter(isRecentActive);
+  const staleAttempts = inProgressAttempts.filter(a => !isRecentActive(a));
+
+  const filteredLiveAttempts = inProgressAttempts.filter(a => {
+    const userMatch = (a.userId?.fullName || a.userId?.username || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const setMatch = (a.questionSetId?.name || "").toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = userMatch || setMatch;
+    if (!matchesSearch) return false;
+
+    if (liveFilterMode === "active") return isRecentActive(a);
+    if (liveFilterMode === "stale") return !isRecentActive(a);
+    return true;
+  });
+
+  const handleSuspendAttempt = (attemptId, title) => {
+    toast((t) => (
+      <div className="flex flex-col gap-2 py-1 text-left">
+        <div className="flex items-center gap-2">
+          <span className="text-base">⚠️</span>
+          <span className="font-extrabold text-sm text-white">
+            Suspend Live Exam?
+          </span>
+        </div>
+        <p className="text-xs text-slate-300">
+          The candidate for <strong className="text-white">{title}</strong> will be locked out immediately.
+        </p>
+        <div className="flex items-center justify-end gap-2 mt-2">
+          <button
+            onClick={() => toast.dismiss(t.id)}
+            className="px-3 py-1 text-xs font-bold rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                await API.post(`/mcq/attempts/${attemptId}/suspend`, { reason: "Suspended by admin via Live Monitor" });
+                toast.success(`Exam suspended for ${title}`);
+                refreshAttempts();
+              } catch (err) {
+                toast.error(err.response?.data?.message || "Failed to suspend test");
+              }
+            }}
+            className="px-3 py-1 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow-xs transition-colors"
+          >
+            Suspend Now
+          </button>
+        </div>
+      </div>
+    ), { 
+      duration: 8000, 
+      position: "top-center",
+      style: {
+        background: '#0f172a',
+        color: '#fff',
+        borderRadius: '16px',
+        padding: '14px 18px',
+        maxWidth: '420px',
+        border: '1px solid #334155',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4)'
+      }
+    });
+  };
+
+  const formatOSBadge = (os, browser) => {
+    let icon = "💻";
+    if (/mac/i.test(os)) icon = "🍎";
+    else if (/win/i.test(os)) icon = "🪟";
+    else if (/android/i.test(os)) icon = "🤖";
+    else if (/ios/i.test(os)) icon = "📱";
+    else if (/linux/i.test(os)) icon = "🐧";
+
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700/80 text-slate-700 dark:text-slate-300 font-medium text-[11px] border border-slate-200/60 dark:border-slate-600/60">
+        <span>{icon}</span>
+        <span>{os || "Unknown OS"}</span>
+        {browser && <span className="text-slate-400">• {browser}</span>}
+      </span>
+    );
+  };
+
+  const formatSec = (sec) => {
+    if (sec === undefined || sec === null || isNaN(sec)) return "—";
+    const s = Math.max(0, Math.round(sec));
+    const m = Math.floor(s / 60);
+    const remS = s % 60;
+    return `${m}:${remS < 10 ? '0' : ''}${remS}`;
+  };
+
+  const formatLastActive = (date) => {
+    if (!date) return "Recently";
+    const diffSec = Math.round((new Date() - new Date(date)) / 1000);
+    if (diffSec < 20) return "Active now";
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const min = Math.floor(diffSec / 60);
+    return `${min}m ago`;
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      
-      {/* User Full Detail Modal */}
-      {detailModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 animate-in fade-in duration-200 overflow-y-auto">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 max-w-3xl w-full border border-slate-100 dark:border-slate-700 max-h-[90vh] flex flex-col my-auto animate-in zoom-in-95 duration-150">
-            
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-bold text-lg flex items-center justify-center shadow-md">
-                  {(detailModal.data?.user?.fullName || detailModal.data?.user?.username || 'U').charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                    {detailModal.data?.user?.fullName || detailModal.data?.user?.username || 'Loading User...'}
-                    {detailModal.data?.user?.role && (
-                      <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md ${
-                        detailModal.data.user.role === 'admin' 
-                          ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300' 
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                      }`}>
-                        {detailModal.data.user.role}
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono">
-                    @{detailModal.data?.user?.username} • ID: {detailModal.data?.user?._id}
-                  </p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            {detailModal.loading ? (
-              <div className="p-12 text-center text-slate-500">
-                <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <span>Fetching complete user records...</span>
-              </div>
-            ) : detailModal.data ? (
-              <div className="py-6 overflow-y-auto space-y-6 flex-1 pr-1 custom-scrollbar-hide">
-                
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Question Sets</span>
-                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                      {detailModal.data.stats?.totalSets || 0}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Attempts</span>
-                    <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-                      {detailModal.data.stats?.totalAttempts || 0}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Completed</span>
-                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                      {detailModal.data.stats?.completedAttempts || 0}
-                    </p>
-                  </div>
-                  <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">Avg Accuracy</span>
-                    <p className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
-                      {detailModal.data.stats?.avgScorePercent || 0}%
-                    </p>
-                  </div>
-                </div>
-
-                {/* Account Details Box */}
-                <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 text-xs space-y-1.5 font-medium text-slate-600 dark:text-slate-300">
-                  <div className="flex justify-between">
-                    <span>Account Registered:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {new Date(detailModal.data.user.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Last Profile Update:</span>
-                    <span className="font-bold text-slate-900 dark:text-white">
-                      {new Date(detailModal.data.user.updatedAt).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Uploaded Question Sets Section */}
-                <div>
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">
-                    Uploaded Question Sets ({detailModal.data.questionSets?.length || 0})
-                  </h4>
-                  {detailModal.data.questionSets?.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No question sets uploaded by this user.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {detailModal.data.questionSets.map(s => (
-                        <div key={s._id} className="p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between text-xs">
-                          <div>
-                            <span className="font-bold text-slate-900 dark:text-white text-sm">{s.name}</span>
-                            <p className="text-slate-400 text-[11px] mt-0.5">{s.questions?.length || 0} questions • Added {new Date(s.createdAt).toLocaleDateString()}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleReevaluateSet(s._id, s.name)}
-                              disabled={reevaluatingSetId === s._id}
-                              className="px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg transition-colors disabled:opacity-50"
-                            >
-                              {reevaluatingSetId === s._id ? "Re-evaluating..." : "Re-evaluate"}
-                            </button>
-                            <Link 
-                              to={`/edit-set/${s._id}`} 
-                              onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
-                              className="px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg font-bold hover:underline"
-                            >
-                              View / Edit
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Practice Attempt History Section */}
-                <div>
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">
-                    Test Attempt History ({detailModal.data.attempts?.length || 0})
-                  </h4>
-                  {detailModal.data.attempts?.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No practice attempts taken by this user.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {detailModal.data.attempts.map(a => {
-                        const isCompleted = a.status === 'completed';
-                        return (
-                          <div key={a._id} className="p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between text-xs">
-                            <div>
-                              <span className="font-bold text-slate-900 dark:text-white text-sm">
-                                {a.questionSetId?.name || "Deleted Set"}
-                              </span>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded ${
-                                  isCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                                }`}>
-                                  {a.status}
-                                </span>
-                                <span className="text-slate-500 font-semibold">
-                                  Score: {a.scoreAtTimeUp}/{a.totalQuestions}
-                                </span>
-                                <span className="text-slate-400 text-[11px]">
-                                  • {new Date(a.createdAt).toLocaleDateString()}
-                                </span>
-                              </div>
-                            </div>
-                            {isCompleted && (
-                              <Link 
-                                to={`/review/${a._id}`} 
-                                onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
-                                className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-lg font-bold hover:underline"
-                              >
-                                Review
-                              </Link>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-              </div>
-            ) : null}
-
-            {/* Modal Footer */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 flex justify-end shrink-0">
-              <button
-                onClick={() => setDetailModal({ isOpen: false, loading: false, data: null })}
-                className="px-5 py-2 bg-slate-900 dark:bg-slate-700 text-white font-bold text-xs rounded-xl hover:bg-slate-800"
-              >
-                Close Details
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {confirmModal.isOpen && (
@@ -423,7 +346,26 @@ export default function AdminPanel() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         
         {/* Navigation Tabs */}
-        <div className="flex bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+        <div className="flex flex-wrap bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl shrink-0 gap-1">
+          <button
+            onClick={() => setActiveTab("live")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeTab === "live"
+                ? "bg-rose-600 text-white shadow-xs"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${activeNowAttempts.length > 0 ? "bg-emerald-400 opacity-75" : "bg-slate-400 opacity-40"}`} />
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${activeNowAttempts.length > 0 ? "bg-emerald-400" : "bg-slate-400"}`} />
+            </span>
+            <span>Live Monitor</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              activeTab === "live" ? "bg-rose-700 text-white" : activeNowAttempts.length > 0 ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
+            }`}>
+              {activeNowAttempts.length > 0 ? activeNowAttempts.length : inProgressAttempts.length}
+            </span>
+          </button>
           <button
             onClick={() => setActiveTab("users")}
             className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
@@ -472,15 +414,28 @@ export default function AdminPanel() {
           </div>
 
           {activeTab === "users" && (
-            <select
-              value={roleFilter}
-              onChange={e => setRoleFilter(e.target.value)}
-              className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
-            >
-              <option value="all">All Roles</option>
-              <option value="user">Users Only</option>
-              <option value="admin">Admins Only</option>
-            </select>
+            <>
+              <select
+                value={selectedUserCategory}
+                onChange={e => setSelectedUserCategory(e.target.value)}
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+              >
+                <option value="all">All Categories</option>
+                {allUserCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+
+              <select
+                value={roleFilter}
+                onChange={e => setRoleFilter(e.target.value)}
+                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+              >
+                <option value="all">All Roles</option>
+                <option value="user">Users Only</option>
+                <option value="admin">Admins Only</option>
+              </select>
+            </>
           )}
         </div>
 
@@ -488,9 +443,310 @@ export default function AdminPanel() {
 
       {/* Tab Content Sections */}
 
+      {/* 0. Live Monitor Tab */}
+      {activeTab === "live" && (
+        <div className="space-y-6">
+          {/* Controls Bar */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-3 w-3">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${activeNowAttempts.length > 0 ? "bg-emerald-400 opacity-75" : "bg-slate-400 opacity-40"}`} />
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${activeNowAttempts.length > 0 ? "bg-emerald-500" : "bg-slate-400"}`} />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Real-time Candidate Monitor
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{activeNowAttempts.length} active right now</span>
+                  {staleAttempts.length > 0 && <span> • {staleAttempts.length} abandoned/idle from earlier</span>}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-between lg:justify-end">
+              {/* Filter Pills */}
+              <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold">
+                <button
+                  onClick={() => setLiveFilterMode("active")}
+                  className={`px-3 py-1 rounded-lg transition-all ${
+                    liveFilterMode === "active"
+                      ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs font-black"
+                      : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  }`}
+                >
+                  Active Now ({activeNowAttempts.length})
+                </button>
+                <button
+                  onClick={() => setLiveFilterMode("all")}
+                  className={`px-3 py-1 rounded-lg transition-all ${
+                    liveFilterMode === "all"
+                      ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-black"
+                      : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  }`}
+                >
+                  All ({inProgressAttempts.length})
+                </button>
+                <button
+                  onClick={() => setLiveFilterMode("stale")}
+                  className={`px-3 py-1 rounded-lg transition-all ${
+                    liveFilterMode === "stale"
+                      ? "bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs font-black"
+                      : "text-slate-500 hover:text-slate-800 dark:hover:text-white"
+                  }`}
+                >
+                  Idle / Stale ({staleAttempts.length})
+                </button>
+              </div>
+
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  autoRefresh
+                    ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80"
+                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${autoRefresh ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                {autoRefresh ? "Auto-refresh: ON" : "Auto-refresh: OFF"}
+              </button>
+
+              <button
+                onClick={refreshAttempts}
+                disabled={refreshing}
+                className="px-3.5 py-1.5 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 disabled:opacity-60"
+              >
+                <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+          </div>
+
+          {/* Live Attempts List */}
+          {filteredLiveAttempts.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 p-12 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs text-center">
+              <div className="w-14 h-14 bg-slate-100 dark:bg-slate-700/60 rounded-2xl flex items-center justify-center mx-auto mb-3 text-slate-400">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h4 className="text-base font-bold text-slate-900 dark:text-white mb-1">
+                {searchTerm ? "No live tests matching search" : "No Tests In Progress"}
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                {searchTerm 
+                  ? "Try clearing your search query to see all active test attempts."
+                  : "When candidates start an exam, their live time left per section, active question, answer count, and device OS will appear here in real time."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {filteredLiveAttempts.map(a => {
+                const totalQ = a.totalQuestions || 1;
+                const answeredCount = a.answers?.filter(ans => ans.selectedOption)?.length || 0;
+                const answeredPct = Math.round((answeredCount / totalQ) * 100);
+                const currentQ = (a.currentQuestionIndex || 0) + 1;
+                const curSection = a.currentSection || a.section || "General";
+                const userObj = a.userId || {};
+                const lastActive = formatLastActive(a.lastActiveAt || a.updatedAt);
+                const isVeryActive = !a.lastActiveAt || (new Date() - new Date(a.lastActiveAt)) < 30000;
+
+                // Section timers map
+                const sectionTimersLeftMap = a.sectionTimersLeft instanceof Map
+                  ? Object.fromEntries(a.sectionTimersLeft)
+                  : (a.sectionTimersLeft || {});
+
+                return (
+                  <div 
+                    key={a._id} 
+                    className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs hover:shadow-md transition-all p-5 sm:p-6 flex flex-col justify-between gap-5"
+                  >
+                    {/* Header: User & Status */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-base flex items-center justify-center shadow-md">
+                            {(userObj.fullName || userObj.username || "U").charAt(0).toUpperCase()}
+                          </div>
+                          <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-800 ${
+                            isVeryActive ? "bg-emerald-500 animate-pulse" : "bg-amber-400"
+                          }`} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-slate-900 dark:text-white">
+                              {userObj.fullName || userObj.username || "Candidate"}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              @{userObj.username}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {formatOSBadge(a.userOS, a.userBrowser)}
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              • {lastActive}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <span className="px-2.5 py-1 text-[10px] font-extrabold uppercase rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 shrink-0">
+                        Live Test
+                      </span>
+                    </div>
+
+                    {/* Test & Section Info */}
+                    <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Question Set:</span>
+                          <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                            {a.questionSetId?.name || "Untitled Set"}
+                          </span>
+                        </div>
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                          {a.questionSetId?.category || "General"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Active Section:</span>
+                          <span className="font-black text-blue-600 dark:text-blue-400">
+                            {curSection}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">Current Question:</span>
+                          <span className="font-bold text-slate-700 dark:text-slate-300">
+                            Viewing Q#{currentQ}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Question Progress Bar */}
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                          <span className="text-slate-500 dark:text-slate-400">Answered Questions:</span>
+                          <span className="text-slate-900 dark:text-white font-mono">{answeredCount} / {totalQ} ({answeredPct}%)</span>
+                        </div>
+                        <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className="bg-emerald-500 h-full rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(100, Math.max(2, answeredPct))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section Timers Left Breakdown */}
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block mb-2">
+                        {a.mockMode ? "Section Timers Remaining:" : "Time Remaining:"}
+                      </span>
+
+                      {a.mockMode && Array.isArray(a.sectionTimers) && a.sectionTimers.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {a.sectionTimers.map((st) => {
+                            const isCurrent = st.section === curSection;
+                            const totalSec = st.durationSec || 1;
+                            const leftSec = sectionTimersLeftMap[st.section] !== undefined
+                              ? sectionTimersLeftMap[st.section]
+                              : isCurrent ? (a.timeLeftSec ?? totalSec) : totalSec;
+                            const isLocked = leftSec <= 0;
+
+                            return (
+                              <div
+                                key={st.section}
+                                className={`p-2.5 rounded-xl border transition-all text-xs flex items-center justify-between ${
+                                  isCurrent
+                                    ? "bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-100 shadow-xs"
+                                    : isLocked
+                                    ? "bg-slate-100 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-400 opacity-60"
+                                    : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                                }`}
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <div className="flex items-center gap-1.5">
+                                    {isCurrent && <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping shrink-0" />}
+                                    <span className="font-bold truncate text-[11px]">{st.section}</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-400">
+                                    {isCurrent ? "Active now" : isLocked ? "Completed/Locked" : "Pending"}
+                                  </span>
+                                </div>
+                                <span className={`font-mono font-black text-xs shrink-0 ${
+                                  isLocked ? "text-slate-400" : isCurrent ? "text-blue-600 dark:text-blue-400" : "text-slate-700 dark:text-slate-300"
+                                }`}>
+                                  {formatSec(leftSec)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80">
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                            Single Section Timer ({curSection}):
+                          </span>
+                          <span className="text-sm font-mono font-black text-blue-600 dark:text-blue-400">
+                            {formatSec(a.timeLeftSec ?? a.timerDurationSec)} left
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Card Footer Actions */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700/60 text-xs">
+                      <span className="text-[11px] text-slate-400">
+                        Started {new Date(a.createdAt).toLocaleTimeString()}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {userObj._id && (
+                          <Link
+                            to={`/admin/evaluate/${userObj._id}`}
+                            target="_blank"
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                            title="Open candidate full evaluation in new tab"
+                          >
+                            <span>Evaluate ↗</span>
+                          </Link>
+                        )}
+                        <button
+                          onClick={() => handleSuspendAttempt(a._id, a.questionSetId?.name || "Test")}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                          title="Suspend and finish this live exam session"
+                        >
+                          Suspend Test
+                        </button>
+                        <button
+                          onClick={() => setConfirmModal({
+                            open: true,
+                            type: 'attempt',
+                            id: a._id,
+                            title: `attempt by @${userObj.username || 'unknown'}`
+                          })}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                          title="Delete stale or test attempt"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 1. Users Tab */}
       {activeTab === "users" && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-xs">
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-200/80 dark:border-slate-700/80 overflow-hidden shadow-xs">
           {loading ? (
             <div className="p-8 text-center text-slate-500">Loading user records...</div>
           ) : filteredUsers.length === 0 ? (
@@ -516,23 +772,32 @@ export default function AdminPanel() {
                       <tr key={u._id} className="hover:bg-slate-50/60 dark:hover:bg-slate-700/30 transition-colors">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => handleOpenUserDetails(u._id)}
+                            <Link
+                              to={`/admin/evaluate/${u._id}`}
                               className="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-800 to-slate-900 dark:from-purple-600 dark:to-indigo-600 text-white font-bold flex items-center justify-center text-xs hover:scale-105 transition-transform"
-                              title="Click to view user details"
+                              title="Click to view candidate evaluation profile"
                             >
                               {(u.fullName || u.username).charAt(0).toUpperCase()}
-                            </button>
+                            </Link>
                             <div>
-                              <button 
-                                onClick={() => handleOpenUserDetails(u._id)}
-                                className="font-bold text-slate-900 dark:text-white text-sm hover:text-purple-600 dark:hover:text-purple-400 text-left transition-colors"
+                              <Link 
+                                to={`/admin/evaluate/${u._id}`}
+                                className="font-bold text-slate-900 dark:text-white text-sm hover:text-blue-600 dark:hover:text-blue-400 text-left transition-colors block"
                               >
                                 {u.fullName || u.username}
-                              </button>
+                              </Link>
                               <div className="text-slate-400 font-mono text-[11px]">
                                 @{u.username}
                               </div>
+                              {u.categories && u.categories.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1 mt-1">
+                                  {u.categories.map(c => (
+                                    <span key={c} className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -565,19 +830,16 @@ export default function AdminPanel() {
 
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleOpenUserDetails(u._id)}
-                              className="px-3 py-1 rounded-lg text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors"
+                            <Link
+                              to={`/admin/evaluate/${u._id}`}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-500 transition-all shadow-xs flex items-center gap-1.5 active:scale-95"
+                              title="Open complete candidate evaluation page"
                             >
-                              View Details
-                            </button>
-
-                            <button
-                              onClick={() => handleToggleRole(u._id, u.role)}
-                              className="px-3 py-1 rounded-lg text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors"
-                            >
-                              {isAdmin ? "Demote" : "Promote"}
-                            </button>
+                              <span>Evaluate</span>
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </Link>
 
                             <button
                               onClick={() => setConfirmModal({ 
@@ -586,7 +848,7 @@ export default function AdminPanel() {
                                 id: u._id, 
                                 title: u.fullName || u.username 
                               })}
-                              className="p-1.5 text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+                              className="p-1.5 text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors rounded-lg"
                               title="Delete user"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -603,6 +865,7 @@ export default function AdminPanel() {
             </div>
           )}
         </div>
+      </div>
       )}
 
       {/* 2. Question Sets Audit Tab */}

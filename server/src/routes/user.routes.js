@@ -27,9 +27,11 @@ router.route("/changePassword").post(verifyJWT, changePassword);
 
 // Secured Admin Routes
 router.route("/admin/users").get(verifyJWT, verifyAdmin, getAllUsersWithStats);
+router.route("/admin/users/:userId")
+    .get(verifyJWT, verifyAdmin, getUserDetailsByAdmin)
+    .delete(verifyJWT, verifyAdmin, deleteUserByAdmin);
 router.route("/admin/users/:userId/details").get(verifyJWT, verifyAdmin, getUserDetailsByAdmin);
 router.route("/admin/users/:userId/role").patch(verifyJWT, verifyAdmin, updateUserRole);
-router.route("/admin/users/:userId").delete(verifyJWT, verifyAdmin, deleteUserByAdmin);
 router.route("/admin/analytics").get(verifyJWT, verifyAdmin, getAdminAnalytics);
 
 export default router;

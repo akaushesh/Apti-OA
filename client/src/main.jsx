@@ -14,6 +14,7 @@ import AttemptScreen from './pages/AttemptScreen';
 import ReviewScreen from './pages/ReviewScreen';
 import EditSet from './pages/EditSet';
 import AdminPanel from './pages/AdminPanel';
+import UserEvaluation from './pages/UserEvaluation';
 
 const router = createBrowserRouter([
   {
@@ -47,6 +48,10 @@ const router = createBrowserRouter([
       {
         path: "/admin",
         element: <Protected authentication><Secured requiredRole="admin"><AdminPanel /></Secured></Protected>,
+      },
+      {
+        path: "/admin/evaluate/:userId",
+        element: <Protected authentication><Secured requiredRole="admin"><UserEvaluation /></Secured></Protected>,
       }
     ],
   },

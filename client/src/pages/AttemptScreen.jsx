@@ -4,6 +4,24 @@ import API from "../api/axios";
 import toast from "react-hot-toast";
 import FormattedQuestionText from "../components/FormattedQuestionText";
 
+function getClientEnv() {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  let os = "Unknown OS";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Macintosh|Mac OS X/i.test(ua)) os = "macOS";
+  else if (/Windows NT/i.test(ua)) os = "Windows";
+  else if (/Linux/i.test(ua)) os = "Linux";
+
+  let browser = "Unknown Browser";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/Chrome\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) browser = "Safari";
+  else if (/Firefox\//i.test(ua)) browser = "Firefox";
+
+  return { userOS: os, userBrowser: browser };
+}
+
 export default function AttemptScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -25,6 +43,8 @@ export default function AttemptScreen() {
   const [untimedMode, setUntimedMode] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [currIdx, setCurrIdx] = useState(0);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [suspendReason, setSuspendReason] = useState("");
 
   // ── mock-mode state ──
   // sectionOrder: string[]  — ordered list of sections
@@ -52,6 +72,14 @@ export default function AttemptScreen() {
       .then(res => {
         const a = res.data.data;
         setAttempt(a);
+
+        if (a.status === 'suspended' || a.suspendReason) {
+          setIsSuspended(true);
+          setSuspendReason(a.suspendReason || "");
+        } else if (a.status === 'completed') {
+          navigate(`/review/${id}`, { replace: true });
+          return;
+        }
 
         const savedAns = {};
         const savedTimes = {};
@@ -116,29 +144,29 @@ export default function AttemptScreen() {
 
   // ── single mode timer ──
   useEffect(() => {
-    if (!attempt || attempt.mockMode) return;
+    if (isSuspended || !attempt || attempt.mockMode) return;
     if (timeLeft > 0 && !timeUp && !untimedMode) {
       const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
       return () => clearTimeout(t);
     } else if (timeLeft === 0 && attempt && !timeUp && !untimedMode) {
       handleTimeUp();
     }
-  }, [timeLeft, timeUp, attempt, untimedMode]);
+  }, [timeLeft, timeUp, attempt, untimedMode, isSuspended]);
 
   // ── mock mode section timer ──
   useEffect(() => {
-    if (!attempt?.mockMode || attempt?.freeNav || sectionTimeUp) return;
+    if (isSuspended || !attempt?.mockMode || attempt?.freeNav || sectionTimeUp) return;
     if (sectionTimeLeft > 0) {
       const t = setTimeout(() => setSectionTimeLeft(p => p - 1), 1000);
       return () => clearTimeout(t);
     } else if (sectionTimeLeft === 0 && qs && sectionOrder.length > 0) {
       handleSectionTimeUp();
     }
-  }, [sectionTimeLeft, sectionTimeUp, attempt, qs, sectionOrder]);
+  }, [sectionTimeLeft, sectionTimeUp, attempt, qs, sectionOrder, isSuspended]);
 
   // ── free-nav mode: only the active section's timer ticks, others pause ──
   useEffect(() => {
-    if (!attempt?.mockMode || !attempt?.freeNav || !qs) return;
+    if (isSuspended || !attempt?.mockMode || !attempt?.freeNav || !qs) return;
     const activeSection = qs.questions[freeNavCurrIdx]?.section;
     if (!activeSection) return;
     const remaining = freeNavTimers[activeSection] ?? 0;
@@ -147,7 +175,7 @@ export default function AttemptScreen() {
       setFreeNavTimers(prev => ({ ...prev, [activeSection]: Math.max(0, (prev[activeSection] ?? 0) - 1) }));
     }, 1000);
     return () => clearTimeout(t);
-  }, [freeNavTimers, freeNavCurrIdx, attempt, qs]);
+  }, [freeNavTimers, freeNavCurrIdx, attempt, qs, isSuspended]);
 
   // ── helpers ──
   const formatTime = (sec) => {
@@ -193,9 +221,53 @@ export default function AttemptScreen() {
     return () => clearTimeout(t);
   }, [activeQuestionId, loading, timeUp, attempt, freeNavTimers, sectionTimeLeft, sectionTimeUp, untimedMode, timeLeft, activeQ, showSubmitModal, showSectionSubmitModal]);
 
-  const saveProgress = async (isSubmit = false) => {
+  const getLiveProgressPayload = () => {
+    let curSec = '';
+    let curQIdx = 0;
+    let secTimersMap = {};
+    let tLeft = 0;
+
+    if (attempt?.mockMode) {
+      if (attempt?.freeNav) {
+        curQIdx = freeNavCurrIdx;
+        curSec = qs?.questions?.[freeNavCurrIdx]?.section || '';
+        secTimersMap = { ...freeNavTimers };
+        tLeft = Object.values(freeNavTimers).reduce((sum, s) => sum + Math.max(0, s), 0);
+      } else {
+        curQIdx = mockCurrIdx;
+        curSec = sectionOrder[activeSectionIdx] || '';
+        secTimersMap = {};
+        sectionOrder.forEach((sec, idx) => {
+          if (idx < activeSectionIdx) {
+            secTimersMap[sec] = 0;
+          } else if (idx === activeSectionIdx) {
+            secTimersMap[sec] = sectionTimeLeft;
+          } else {
+            const t = attempt?.sectionTimers?.find(st => st.section === sec);
+            secTimersMap[sec] = t ? t.durationSec : 0;
+          }
+        });
+        tLeft = Object.values(secTimersMap).reduce((sum, s) => sum + Math.max(0, s), 0);
+      }
+    } else {
+      curSec = attempt?.section || 'General';
+      curQIdx = currIdx;
+      tLeft = timeLeft;
+      secTimersMap = { [curSec]: timeLeft };
+    }
+
+    return {
+      currentSection: curSec,
+      currentQuestionIndex: curQIdx,
+      timeLeftSec: tLeft,
+      sectionTimersLeft: secTimersMap,
+      ...getClientEnv()
+    };
+  };
+
+  const saveProgress = async (isSubmit = false, isSilent = false) => {
     if (!qs || !attempt) return;
-    setSaving(true);
+    if (!isSilent) setSaving(true);
     let score = 0;
     const ansArray = (qs.questions || []).map(q => {
       const qId = q._id;
@@ -213,19 +285,34 @@ export default function AttemptScreen() {
       };
     });
     try {
-      await API.patch(`/mcq/attempts/${id}`, {
+      const res = await API.patch(`/mcq/attempts/${id}`, {
         answers: ansArray,
         scoreAtTimeUp: !untimedMode ? score : attempt.scoreAtTimeUp,
         finalScoreIfUntimed: score,
-        status: isSubmit ? 'completed' : 'in-progress'
+        status: isSubmit ? 'completed' : 'in-progress',
+        ...getLiveProgressPayload()
       });
-      if (!isSubmit) toast.success("Progress saved", { duration: 1500 });
-    } catch (e) {
-      toast.error("Failed to save progress");
+      if (res.data?.data?.status === 'suspended' || res.data?.data?.suspendReason) {
+        setIsSuspended(true);
+        setSuspendReason(res.data.data.suspendReason || "");
+        return;
+      }
+      if (!isSubmit && !isSilent) toast.success("Progress saved", { duration: 1500 });
+    } catch {
+      if (!isSilent) toast.error("Failed to save progress");
     } finally {
-      setSaving(false);
+      if (!isSilent) setSaving(false);
     }
   };
+
+  // Live test monitoring heartbeat every 15s
+  useEffect(() => {
+    if (isSuspended || !attempt || !qs || attempt.status === 'completed' || timeUp) return;
+    const interval = setInterval(() => {
+      saveProgress(false, true);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [answers, timeSpentMap, timeLeft, sectionTimeLeft, freeNavTimers, activeSectionIdx, freeNavCurrIdx, mockCurrIdx, currIdx, attempt, qs, timeUp, isSuspended]);
 
   // ── single mode: time up ──
   const handleTimeUp = async () => {
@@ -286,7 +373,7 @@ export default function AttemptScreen() {
 
   // ── keyboard shortcuts ──
   const handleKeyDown = useCallback((e) => {
-    if (showSubmitModal || showSectionSubmitModal) return;
+    if (isSuspended || showSubmitModal || showSectionSubmitModal) return;
     const isMock = attempt?.mockMode;
     const isFreeNav = attempt?.freeNav;
     const questions = isFreeNav ? qs?.questions : isMock ? currentSectionQuestions : qs?.questions;
@@ -302,12 +389,38 @@ export default function AttemptScreen() {
     else if (['c', 'C', '3'].includes(e.key)) handleOptionSelect('C');
     else if (['d', 'D', '4'].includes(e.key)) handleOptionSelect('D');
     else if (['m', 'M'].includes(e.key)) toggleMarkForReview();
-  }, [qs, currIdx, mockCurrIdx, freeNavCurrIdx, showSubmitModal, showSectionSubmitModal, attempt, currentSectionQuestions, answers]);
+  }, [qs, currIdx, mockCurrIdx, freeNavCurrIdx, showSubmitModal, showSectionSubmitModal, attempt, currentSectionQuestions, answers, isSuspended]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  if (isSuspended) return (
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-center items-center p-6 text-center">
+      <div className="w-16 h-16 bg-rose-500/20 text-rose-500 rounded-3xl flex items-center justify-center mb-5 border border-rose-500/30 shadow-lg">
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Examination Suspended</h2>
+      <p className="text-sm text-slate-300 max-w-md mb-2">
+        Your test session has been suspended by the exam administrator.
+      </p>
+      {suspendReason && (
+        <div className="bg-slate-800/80 border border-slate-700/80 px-4 py-2.5 rounded-xl text-xs text-rose-300 max-w-md mb-6">
+          <span className="font-bold block text-[10px] uppercase tracking-wider text-slate-400 mb-0.5">Reason:</span>
+          {suspendReason}
+        </div>
+      )}
+      <button
+        onClick={() => navigate('/')}
+        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm rounded-xl transition-all shadow-md active:scale-95"
+      >
+        Return to Dashboard
+      </button>
+    </div>
+  );
 
   if (loading || !qs || !attempt) return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col justify-center items-center p-6">

@@ -178,7 +178,8 @@ const getAllUsersWithStats = asyncHandler(async (req, res) => {
         users.map(async (u) => {
             const setStats = await QuestionSet.countDocuments({ userId: u._id });
             const attemptStats = await Attempt.countDocuments({ userId: u._id });
-            const completedAttempts = await Attempt.find({ userId: u._id, status: 'completed' });
+            const completedAttempts = await Attempt.find({ userId: u._id, status: 'completed' })
+                .populate("questionSetId", "category");
             
             let avgScorePercent = 0;
             if (completedAttempts.length > 0) {
@@ -188,12 +189,18 @@ const getAllUsersWithStats = asyncHandler(async (req, res) => {
                 avgScorePercent = Math.round(totalPercent / completedAttempts.length);
             }
 
+            // Categories attempted by this user
+            const categories = Array.from(new Set(
+                completedAttempts.map(a => a.questionSetId?.category).filter(Boolean)
+            ));
+
             return {
                 ...u.toObject(),
                 setsUploaded: setStats,
                 attemptsCount: attemptStats,
                 completedAttemptsCount: completedAttempts.length,
-                avgScorePercent
+                avgScorePercent,
+                categories
             };
         })
     );
@@ -215,7 +222,7 @@ const getUserDetailsByAdmin = asyncHandler(async (req, res) => {
 
     const questionSets = await QuestionSet.find({ userId }).sort({ createdAt: -1 });
     const attempts = await Attempt.find({ userId })
-        .populate("questionSetId", "name")
+        .populate("questionSetId", "name category defaultDurationMin")
         .sort({ createdAt: -1 });
 
     const completedAttempts = attempts.filter(a => a.status === 'completed');
@@ -227,10 +234,49 @@ const getUserDetailsByAdmin = asyncHandler(async (req, res) => {
         avgScorePercent = Math.round(totalPercent / completedAttempts.length);
     }
 
+    // ponytail: compute rich category-wise evaluation breakdown
+    const categoryMap = {};
+    attempts.forEach(a => {
+        const cat = a.questionSetId?.category || "General";
+        if (!categoryMap[cat]) {
+            categoryMap[cat] = {
+                category: cat,
+                totalAttempts: 0,
+                completedAttempts: 0,
+                totalScorePct: 0,
+                scores: [],
+                totalQuestions: 0,
+                totalCorrect: 0
+            };
+        }
+        categoryMap[cat].totalAttempts++;
+        if (a.status === 'completed') {
+            categoryMap[cat].completedAttempts++;
+            const pct = Math.round(((a.scoreAtTimeUp || 0) / (a.totalQuestions || 1)) * 100);
+            categoryMap[cat].scores.push(pct);
+            categoryMap[cat].totalScorePct += pct;
+            categoryMap[cat].totalQuestions += (a.totalQuestions || 0);
+            categoryMap[cat].totalCorrect += (a.scoreAtTimeUp || 0);
+        }
+    });
+
+    const categoryBreakdown = Object.values(categoryMap).map(c => ({
+        category: c.category,
+        totalAttempts: c.totalAttempts,
+        completedAttempts: c.completedAttempts,
+        avgScorePercent: c.completedAttempts > 0 ? Math.round(c.totalScorePct / c.completedAttempts) : 0,
+        highestScore: c.scores.length > 0 ? Math.max(...c.scores) : 0,
+        lowestScore: c.scores.length > 0 ? Math.min(...c.scores) : 0,
+        accuracyPercent: c.totalQuestions > 0 ? Math.round((c.totalCorrect / c.totalQuestions) * 100) : 0,
+        totalQuestions: c.totalQuestions,
+        totalCorrect: c.totalCorrect
+    }));
+
     res.status(200).json(new ApiResponse(200, "Fetched detailed user record", {
         user,
         questionSets,
         attempts,
+        categoryBreakdown,
         stats: {
             totalSets: questionSets.length,
             totalAttempts: attempts.length,

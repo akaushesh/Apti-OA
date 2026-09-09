@@ -39,6 +39,24 @@ function DurationPicker({ value, onChange }) {
   );
 }
 
+function getClientEnv() {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  let os = "Unknown OS";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Macintosh|Mac OS X/i.test(ua)) os = "macOS";
+  else if (/Windows NT/i.test(ua)) os = "Windows";
+  else if (/Linux/i.test(ua)) os = "Linux";
+
+  let browser = "Unknown Browser";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/Chrome\//i.test(ua)) browser = "Chrome";
+  else if (/Safari\//i.test(ua) && !/Chrome\//i.test(ua)) browser = "Safari";
+  else if (/Firefox\//i.test(ua)) browser = "Firefox";
+
+  return { userOS: os, userBrowser: browser };
+}
+
 export default function TestConfig() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -145,7 +163,12 @@ export default function TestConfig() {
           sectionTimers,
           timerDurationSec: totalSec,
           totalQuestions: qs.questions.length,
+          ...getClientEnv()
         };
+      }
+
+      if (mode === "single") {
+        body = { ...body, ...getClientEnv() };
       }
 
       const res = await API.post("/mcq/attempts", body);
